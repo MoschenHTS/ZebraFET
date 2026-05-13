@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt, QSettings
 from PySide6.QtGui import QPixmap, QFont
 
 from src.core.utils import resource_path
+from src.core.constants import APP_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +252,7 @@ class SetupWizard(QWizard):
         super().__init__(parent)
         self._settings = settings
 
-        self.setWindowTitle("ZebraFET 2.0 — Setup")
+        self.setWindowTitle(f"ZebraFET {APP_VERSION} — Setup")
         self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
         self.setMinimumSize(560, 420)
         self.resize(620, 460)
