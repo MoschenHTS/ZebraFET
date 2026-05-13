@@ -39,7 +39,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/henriquemoschen/ZebraFET"
+Repository = "https://github.com/MoschenHTS/ZebraFET"
 
 [project.scripts]
 zebrafet = "main:main"

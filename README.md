@@ -11,14 +11,14 @@ It handles the full experimental workflow: project setup, daily well scoring, ph
 ### Option A — pip (recommended for developers)
 
 ```bash
-pip install git+https://github.com/henriquemoschen/ZebraFET.git
+pip install git+https://github.com/MoschenHTS/ZebraFET.git
 zebrafet
 ```
 
 ### Option B — clone and run
 
 ```bash
-git clone https://github.com/henriquemoschen/ZebraFET.git
+git clone https://github.com/MoschenHTS/ZebraFET.git
 cd ZebraFET
 pip install -r requirements.txt
 python main.py
@@ -28,7 +28,7 @@ Requires **Python 3.10+**.
 
 ### Option C — standalone installer
 
-Pre-built installers for macOS (.pkg), Windows (.exe), and Linux (.AppImage) are available on the [Releases](https://github.com/henriquemoschen/ZebraFET/releases) page — no Python required.
+Pre-built installers for macOS (.pkg), Windows (.exe), and Linux (.AppImage) are available on the [Releases](https://github.com/MoschenHTS/ZebraFET/releases) page — no Python required.
 
 ---
 
