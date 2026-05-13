@@ -1,0 +1,295 @@
+/* ZebraFET Light Theme */
+
+/******************************************************************************
+ * Main Window & General Styles
+ *****************************************************************************/
+QMainWindow, QDialog {
+    background-color: #f0f0f0;
+}
+
+QWidget {
+    background-color: #ffffff;
+    color: #1e1e1e;
+    font-family: "Inter";
+    font-size: 11pt;
+}
+
+QFrame#Sidebar {
+    background-color: #e8e8e8;
+    border-right: 1px solid #dcdcdc;
+}
+
+QStackedWidget {
+    background-color: #f0f0f0;
+}
+
+QScrollArea {
+    border: none;
+}
+
+/******************************************************************************
+ * ScrollBar
+ *****************************************************************************/
+QScrollBar:vertical {
+    border: none;
+    background: #e8e8e8;
+    width: 10px;
+    margin: 0px 0px 0px 0px;
+}
+QScrollBar::handle:vertical {
+    background: #cccccc;
+    min-height: 20px;
+    border-radius: 5px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #bbbbbb;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+
+/******************************************************************************
+ * Buttons
+ *****************************************************************************/
+QPushButton {
+    background-color: #e1e1e1;
+    color: #1e1e1e;
+    border: 1px solid #cccccc;
+    padding: 8px 16px;
+    border-radius: 4px;
+}
+QPushButton:hover {
+    background-color: #d1d1d1;
+    border-color: #bbbbbb;
+}
+QPushButton:pressed {
+    background-color: #b1b1b1;
+}
+QPushButton:disabled {
+    background-color: #f0f0f0;
+    color: #a0a0a0;
+    border-color: #dcdcdc;
+}
+
+QPushButton#PrimaryButton {
+    background-color: #0078d4;
+    color: #ffffff;
+    border-color: #005a9e;
+}
+QPushButton#PrimaryButton:hover {
+    background-color: #106ebe;
+}
+QPushButton#PrimaryButton:pressed {
+    background-color: #005a9e;
+}
+QPushButton#PrimaryButton:disabled {
+    background-color: #a0c7e4;
+    color: #e0e0e0;
+    border-color: #8ab8d9;
+}
+
+
+QPushButton#IconButton {
+    background-color: transparent;
+    border: none;
+    padding: 8px;
+    border-radius: 4px;
+}
+QPushButton#IconButton:hover {
+    background-color: #dcdcdc;
+}
+QPushButton#IconButton:pressed {
+    background-color: #c1c1c1;
+}
+QPushButton#IconButton:checked {
+    background-color: #cce5ff;
+}
+QPushButton#IconButton:disabled {
+    background-color: transparent;
+}
+
+
+QPushButton#NavButton {
+    background-color: transparent;
+    border: none;
+    padding: 10px;
+    text-align: left;
+    font-size: 11pt;
+}
+QPushButton#NavButton:hover {
+    background-color: #dcdcdc;
+}
+QPushButton#NavButton:pressed {
+    background-color: #b8d7f5;
+}
+QPushButton#NavButton:checked {
+    background-color: #cce5ff;
+    font-weight: bold;
+    color: #005a9e;
+}
+QPushButton#NavButton:disabled {
+    color: #a0a0a0;
+}
+
+
+QPushButton#LinkButton {
+    background-color: transparent;
+    border: none;
+    color: #005a9e;
+    text-align: left;
+    padding: 4px 0px;
+}
+QPushButton#LinkButton:hover {
+    color: #0078d4;
+    text-decoration: underline;
+}
+
+QPushButton#StatusButton:checked {
+    background-color: #0078d4;
+    border-color: #005a9e;
+    color: #ffffff;
+    font-weight: bold;
+}
+
+/******************************************************************************
+ * Input Widgets
+ *****************************************************************************/
+QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox {
+    background-color: #ffffff;
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+    padding: 6px;
+    color: #1e1e1e;
+}
+QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {
+    border: 1px solid #0078d4;
+}
+QLineEdit:disabled, QTextEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {
+    background-color: #f0f0f0;
+    color: #a0a0a0;
+    border-color: #dcdcdc;
+}
+
+QComboBox {
+    background-color: #ffffff;
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+    padding: 6px;
+}
+QComboBox:hover {
+    border-color: #bbbbbb;
+    background-color: #e8e8e8;
+}
+QComboBox:disabled {
+    background-color: #f0f0f0;
+    color: #a0a0a0;
+    border-color: #dcdcdc;
+}
+QComboBox::drop-down {
+    border: none;
+}
+QComboBox::down-arrow {
+    image: url(resources/icons/chevron-down-dark.svg);
+    width: 16px;
+    height: 16px;
+}
+QComboBox QAbstractItemView {
+    background-color: #ffffff;
+    color: #1e1e1e;
+    border: 1px solid #dcdcdc;
+    selection-background-color: #0078d4;
+    selection-color: #ffffff;
+    outline: 0px;
+}
+QComboBox QAbstractItemView::item:hover {
+    background-color: #0078d4; /* MODIFICADO */
+    color: #ffffff;            /* MODIFICADO */
+}
+
+QSpinBox, QDoubleSpinBox { padding-right: 20px; }
+QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: border; subcontrol-position: top right; width: 20px; border: none; }
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: url(resources/icons/chevron-up-dark.svg); width: 12px; height: 12px; }
+QSpinBox::up-arrow:hover, QDoubleSpinBox::up-arrow:hover { background-color: #dcdcdc; }
+QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: border; subcontrol-position: bottom right; width: 20px; border: none; }
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: url(resources/icons/chevron-down-dark.svg); width: 12px; height: 12px; }
+QSpinBox::down-arrow:hover, QDoubleSpinBox::down-arrow:hover { background-color: #dcdcdc; }
+
+
+/******************************************************************************
+ * Table & Header
+ *****************************************************************************/
+QTableWidget {
+    background-color: #ffffff;
+    border: 1px solid #dcdcdc;
+    gridline-color: #dcdcdc;
+}
+QTableWidget::item:hover {
+    background-color: #0078d433;
+}
+QHeaderView::section {
+    background-color: #e8e8e8;
+    border: 1px solid #dcdcdc;
+    padding: 5px;
+    font-weight: bold;
+}
+
+/******************************************************************************
+ * Custom Components
+ *****************************************************************************/
+QFrame#Card {
+    background-color: #ffffff;
+    border: 1px solid #dcdcdc;
+    border-radius: 8px;
+}
+QFrame#Card:hover {
+    border-color: #0078d4;
+}
+
+QFrame#ConcentrationWidget {
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 6px;
+}
+QFrame#ConcentrationWidget:hover {
+    background-color: #f0f0f0;
+}
+QFrame#ConcentrationWidget[checked="true"] {
+    border-color: #0078d4;
+    background-color: #cce5ff;
+}
+
+QGroupBox {
+    border: 1px solid #dcdcdc;
+    border-radius: 5px;
+    margin-top: 10px;
+    padding: 10px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 5px;
+    left: 10px;
+}
+
+QLabel#ErrorLabel { color: #b91c1c; font-size: 9pt; padding-left: 5px; }
+QLabel#CounterLabel[status="ok"] { color: #155724; }
+QLabel#CounterLabel[status="warning"] { color: #856404; }
+QLabel#CounterLabel[status="error"] { color: #721c24; }
+
+QLabel#PlateBadge { font-size: 9pt; font-weight: bold; padding: 4px 8px; border-radius: 10px; min-width: 70px; text-align: center; }
+QLabel#PlateBadge[status="ok"] { background-color: #d1e7dd; color: #0f5132; }
+QLabel#PlateBadge[status="warning"] { background-color: #fff3cd; color: #664d03; }
+QLabel#PlateBadge[status="error"] { background-color: #f8d7da; color: #842029; }
+
+FloatingLabelLineEdit { background-color: #ffffff; border: 1px solid #cccccc; border-radius: 4px; }
+FloatingLabelLineEdit:focus-within { border: 1px solid #0078d4; }
+FloatingLabelLineEdit[invalid="true"] { border: 1px solid #b91c1c; }
+FloatingLabelLineEdit QLabel#FloatingLabel { color: #6c757d; background-color: #ffffff; padding: 0 2px; }
+
+PlateThumbnail { border: 2px solid #cccccc; border-radius: 6px; background: #f0f0f0; }
+PlateThumbnail[plateSelected="true"] { border: 2px solid #0078D4; background: #cce5ff; }
+PlateThumbnail:hover { border-color: #999; }

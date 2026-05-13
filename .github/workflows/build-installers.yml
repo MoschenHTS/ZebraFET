@@ -1,0 +1,142 @@
+name: Build Installers
+
+# Triggers:
+#   - Manually via GitHub UI (Actions → Run workflow)
+#   - Automatically on any version tag push: git tag v3.0 && git push --tags
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run test suite
+        run: pytest tests/ -v
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macOS
+            artifact_name: ZebraFET-macOS.pkg
+            artifact_path: dist/ZebraFET-macOS.pkg
+
+          - os: windows-latest
+            label: Windows
+            artifact_name: ZebraFET-setup.exe
+            artifact_path: dist/ZebraFET-setup.exe
+
+          - os: ubuntu-latest
+            label: Linux
+            artifact_name: ZebraFET-x86_64.AppImage
+            artifact_path: dist/ZebraFET-x86_64.AppImage
+
+    runs-on: ${{ matrix.os }}
+    name: Build — ${{ matrix.label }}
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Python ────────────────────────────────────────────────────────────
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      # ── Dependencies ──────────────────────────────────────────────────────
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      # ── Build (macOS) ─────────────────────────────────────────────────────
+      - name: Build macOS .pkg installer
+        if: runner.os == 'macOS'
+        run: bash build_macos.sh
+
+      # ── Build (Windows) ───────────────────────────────────────────────────
+      - name: Build with PyInstaller (Windows)
+        if: runner.os == 'Windows'
+        run: pyinstaller ZebraFET.spec --noconfirm
+
+      - name: Build Windows installer with Inno Setup
+        if: runner.os == 'Windows'
+        run: |
+          # Inno Setup is pre-installed on GitHub Windows runners
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" ZebraFET.iss
+        shell: pwsh
+
+      # ── Build (Linux) ─────────────────────────────────────────────────────
+      - name: Install appimagetool (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          wget -q -O /usr/local/bin/appimagetool \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /usr/local/bin/appimagetool
+          # AppImages need FUSE; use extraction mode as a workaround on CI
+          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> $GITHUB_ENV
+
+      - name: Build Linux AppImage
+        if: runner.os == 'Linux'
+        run: bash build_linux.sh
+
+      # ── Upload artifact ───────────────────────────────────────────────────
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
+          retention-days: 30
+
+  # ── Create GitHub Release with all three installers ─────────────────────
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    # Only run on tag pushes, not manual dispatch
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: installers/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ZebraFET ${{ github.ref_name }}
+          body: |
+            ## ZebraFET ${{ github.ref_name }}
+
+            ### Download
+
+            | Platform | File |
+            |----------|------|
+            | macOS | `ZebraFET-macOS.pkg` |
+            | Windows | `ZebraFET-setup.exe` |
+            | Linux | `ZebraFET-x86_64.AppImage` |
+
+            **macOS**: double-click the `.pkg` to run the installer wizard.
+            **Windows**: double-click `ZebraFET-setup.exe` to run the installer wizard.
+            **Linux**: `chmod +x ZebraFET-x86_64.AppImage && ./ZebraFET-x86_64.AppImage`
+          files: installers/**/*
+          fail_on_unmatched_files: true

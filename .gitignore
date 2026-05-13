@@ -1,0 +1,42 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# PyInstaller artifacts
+build/
+dist/
+
+# Test cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# macOS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Runtime logs
+*.log
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor artifacts
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local project data (runtime-generated)
+projects/
+
+# AI planning / analysis files
+.planning/
+MEMORY.md
+
+# Build guide (internal developer reference)
+WINDOWS_BUILD_GUIDE.md

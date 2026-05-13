@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use ZebraFET in your research, please cite it using the metadata below."
+type: software
+authors:
+  - family-names: Moschen
+    given-names: Henrique Tamanini S.
+    orcid: "https://orcid.org/0000-0002-1920-8915"
+title: "ZebraFET — Standardized Zebrafish Embryo Toxicity Test Assistant (OECD TG 236)"
+version: "2.1"
+license: GPL-3.0
+repository-code: "https://github.com/henriquemoschen/ZebraFET"
+keywords:
+  - zebrafish
+  - fish embryo toxicity
+  - FET test
+  - OECD TG 236
+  - ecotoxicology
+  - LC50
+  - NOEC
+  - LOEC
+  - dose-response
+preferred-citation:
+  type: article
+  authors:
+    - family-names: Moschen
+      given-names: Henrique Tamanini S.
+      orcid: "https://orcid.org/0000-0002-1920-8915"
+  title: "ZebraFET — Standardized Zebrafish Embryo Toxicity Test Assistant (OECD TG 236)"
+  journal: "SoftwareX"
+  year: 2026

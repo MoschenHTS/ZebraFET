@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ZebraFET"
+version = "2.1"
+description = "Fish Embryo Acute Toxicity (FET) test assistant following OECD TG 236"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Henrique Tamanini S. Moschen", email = "Henriquetamanini@icloud.com" }
+]
+keywords = [
+    "zebrafish", "fish embryo toxicity", "FET test", "OECD TG 236",
+    "ecotoxicology", "LC50", "NOEC", "LOEC", "dose-response"
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering",
+    "Intended Audience :: Science/Research",
+]
+dependencies = [
+    "PySide6>=6.9.1",
+    "Pillow>=11.2.1",
+    "numpy>=2.2.6",
+    "matplotlib>=3.10.3",
+    "scipy>=1.15.2",
+    "pandas>=2.3.0",
+    "python-docx>=1.2.0",
+    "openpyxl>=3.1.5",
+    "Markdown>=3.5",
+]
+
+[project.urls]
+Repository = "https://github.com/henriquemoschen/ZebraFET"
+
+[project.scripts]
+zebrafet = "main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.setuptools.package-data]
+"*" = ["resources/**/*"]
