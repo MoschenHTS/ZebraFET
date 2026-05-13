@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
-from PyInstaller.utils.hooks import copy_metadata
+from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 datas = [
     ('resources', 'resources'),   # icons, fonts, themes, docs — all under resources/
@@ -9,12 +9,18 @@ datas = [
 datas += copy_metadata('numpy')
 datas += copy_metadata('pandas')
 
+# Collect all PySide6 files including Qt platform plugins and DLLs (required on Windows)
+pyside6_datas, pyside6_binaries, pyside6_hiddenimports = collect_all('PySide6')
+datas    += pyside6_datas
+binaries  = pyside6_binaries
+hiddenimports = ['pandas', 'numpy', 'matplotlib', 'markdown'] + pyside6_hiddenimports
+
 a = Analysis(
     ['main.py'],
     pathex=['.'],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
-    hiddenimports=['pandas', 'numpy', 'matplotlib', 'markdown'],
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

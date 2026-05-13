@@ -143,9 +143,10 @@ def setup_logging(log_file_path: str | None = None):
     )
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(log_formatter)
-    root_logger.addHandler(console_handler)
+    if sys.stdout is not None:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(log_formatter)
+        root_logger.addHandler(console_handler)
     if log_file_path:
         file_handler = RotatingFileHandler(log_file_path, maxBytes=5*1024*1024, backupCount=3)
         file_handler.setFormatter(log_formatter)
