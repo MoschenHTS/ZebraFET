@@ -1,14 +1,36 @@
 cff-version: 1.2.0
 message: "If you use ZebraFET in your research, please cite it using the metadata below."
 type: software
+title: "ZebraFET — Standardized Zebrafish Embryo Toxicity Test Assistant (OECD TG 236)"
+version: "2.1"
+date-released: "2026-05-14"
+license: GPL-3.0
+repository-code: "https://github.com/MoschenHTS/ZebraFET"
+url: "https://github.com/MoschenHTS/ZebraFET"
 authors:
   - family-names: Moschen
     given-names: Henrique Tamanini S.
     orcid: "https://orcid.org/0000-0002-1920-8915"
-title: "ZebraFET — Standardized Zebrafish Embryo Toxicity Test Assistant (OECD TG 236)"
-version: "2.1"
-license: GPL-3.0
-repository-code: "https://github.com/MoschenHTS/ZebraFET"
+    email: henriquetamanini@icloud.com
+    affiliation: "Toxinology Laboratory, Center for Molecular Biotechnology, University of Brasília (UnB), Brasília, DF, Brazil; Laboratory of Bioenergetics and Metabolism, Department of Genetics and Morphology, Institute of Biology, University of Brasília (UnB), Brasília, DF, Brazil"
+  - family-names: Zimerman
+    given-names: Jeanini
+    affiliation: "Laboratory of Bioenergetics and Metabolism, Department of Genetics and Morphology, Institute of Biology, University of Brasília (UnB), Brasília, DF, Brazil; Laboratory of Molecular Pharmacology, Department of Pharmacy, Faculty of Health Sciences, University of Brasília (UnB), Brasília, DF, Brazil"
+  - family-names: Matos
+    given-names: Vinicius de Faria
+    affiliation: "Laboratory of Bioenergetics and Metabolism, Department of Genetics and Morphology, Institute of Biology, University of Brasília (UnB), Brasília, DF, Brazil"
+  - family-names: Liberal
+    given-names: Clara Helena Cubas
+    affiliation: "Laboratory of Bioenergetics and Metabolism, Department of Genetics and Morphology, Institute of Biology, University of Brasília (UnB), Brasília, DF, Brazil"
+  - family-names: Bellozi
+    given-names: Paula Maria Quaglio
+    affiliation: "Laboratory of Bioenergetics and Metabolism, Department of Genetics and Morphology, Institute of Biology, University of Brasília (UnB), Brasília, DF, Brazil; Laboratory of Molecular Pharmacology, Department of Pharmacy, Faculty of Health Sciences, University of Brasília (UnB), Brasília, DF, Brazil"
+  - family-names: de Bem
+    given-names: Andreza Fabro
+    affiliation: "Laboratory of Bioenergetics and Metabolism, Department of Genetics and Morphology, Institute of Biology, University of Brasília (UnB), Brasília, DF, Brazil; Brazilian National Institute of Science and Technology on Neuroimmunomodulation, Oswaldo Cruz Foundation, Rio de Janeiro, RJ, Brazil"
+  - family-names: Goulart
+    given-names: Jair Trapé
+    affiliation: "Laboratory of Bioenergetics and Metabolism, Department of Genetics and Morphology, Institute of Biology, University of Brasília (UnB), Brasília, DF, Brazil"
 keywords:
   - zebrafish
   - fish embryo toxicity
@@ -19,12 +41,4 @@ keywords:
   - NOEC
   - LOEC
   - dose-response
-preferred-citation:
-  type: article
-  authors:
-    - family-names: Moschen
-      given-names: Henrique Tamanini S.
-      orcid: "https://orcid.org/0000-0002-1920-8915"
-  title: "ZebraFET — Standardized Zebrafish Embryo Toxicity Test Assistant (OECD TG 236)"
-  journal: "SoftwareX"
-  year: 2026
+abstract: "ZebraFET is a desktop application for conducting, managing, and analysing acute zebrafish embryo toxicity tests (Fish Embryo Toxicity — FET) following OECD Test Guideline 236. It handles project setup, daily well scoring, photo management, statistical analysis (LC50, NOEC/LOEC), OECD validity checks, and Word report generation."

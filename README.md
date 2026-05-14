@@ -59,7 +59,7 @@ The full User Manual is available inside the app under **Help → About → User
 
 If you use ZebraFET in your research, please cite:
 
-> Moschen, H. T. S. et al. (2026). ZebraFET — Standardised Zebrafish Embryo Toxicity Test Assistant (OECD TG 236). *SoftwareX*.
+> Moschen, H. T. S., Zimerman, J., Matos, V. F., Liberal, C. H. C., Bellozi, P. M. Q., de Bem, A. F., & Goulart, J. T. (2026). *ZebraFET — Standardized Zebrafish Embryo Toxicity Test Assistant (OECD TG 236)* (v2.1). GitHub. https://github.com/MoschenHTS/ZebraFET
 
 Or use the metadata in [CITATION.cff](CITATION.cff).
 
