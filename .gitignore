@@ -40,3 +40,7 @@ MEMORY.md
 
 # Build guide (internal developer reference)
 WINDOWS_BUILD_GUIDE.md
+
+# Draft manuscripts and reference literature (not for distribution)
+*.docx
+*.pdf
