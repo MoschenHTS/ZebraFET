@@ -11,7 +11,7 @@
 
 [Setup]
 AppName=ZebraFET
-AppVersion=2.1 ; Keep in sync with src/core/constants.py APP_VERSION
+AppVersion=2.1.1 ; Keep in sync with src/core/constants.py APP_VERSION
 AppPublisher=Henrique Tamanini S. Moschen
 AppPublisherURL=https://orcid.org/0000-0002-1920-8915
 AppSupportURL=https://github.com/MoschenHTS/ZebraFET

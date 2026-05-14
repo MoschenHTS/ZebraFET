@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use ZebraFET in your research, please cite it using the metadata below."
 type: software
 title: "ZebraFET — Standardized Zebrafish Embryo Toxicity Test Assistant (OECD TG 236)"
-version: "2.1"
+version: "2.1.1"
 date-released: "2026-05-14"
 license: GPL-3.0
 repository-code: "https://github.com/MoschenHTS/ZebraFET"

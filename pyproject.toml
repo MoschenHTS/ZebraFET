@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ZebraFET"
-version = "2.1"
+version = "2.1.1"
 description = "Fish Embryo Acute Toxicity (FET) test assistant following OECD TG 236"
 readme = "README.md"
 license = { file = "LICENSE" }

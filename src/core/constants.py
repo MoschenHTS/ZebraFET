@@ -5,7 +5,7 @@ All modules should import from here. No project-level imports are made from
 this file so it can be safely imported anywhere without circular-import risk.
 """
 
-APP_VERSION = "2.1"
+APP_VERSION = "2.1.1"
 
 # ---------------------------------------------------------------------------
 # Well observation statuses (OECD TG 236)
