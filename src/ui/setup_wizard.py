@@ -134,8 +134,7 @@ class DataDirectoryPage(QWizardPage):
 
         info = QLabel(
             "ZebraFET will create a <b>projects</b> folder inside the directory "
-            "you choose below. You can change this location at any time by "
-            "re-running the setup wizard from the application settings."
+            "you choose below."
         )
         info.setTextFormat(Qt.TextFormat.RichText)
         info.setWordWrap(True)

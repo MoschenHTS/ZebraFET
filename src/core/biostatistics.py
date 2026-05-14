@@ -137,8 +137,7 @@ def calculate_noec_loec_with_correction(summary_df: pd.DataFrame) -> Dict[str, A
     Calculate NOEC and LOEC using Fisher's Exact Test with Bonferroni correction.
 
     The significance threshold is α_adjusted = 0.05 / k, where k is the number
-    of test concentration groups (Substrate type), as specified in OECD TG 236
-    and described in the SoftwareX paper §4.5.
+    of test concentration groups (Substrate type), as specified in OECD TG 236.
 
     Parameters
     ----------
