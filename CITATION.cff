@@ -4,9 +4,10 @@ type: software
 title: "ZebraFET — Standardized Zebrafish Embryo Toxicity Test Assistant (OECD TG 236)"
 version: "2.1.1"
 date-released: "2026-05-14"
+doi: "10.5281/zenodo.20183713"
 license: GPL-3.0
 repository-code: "https://github.com/MoschenHTS/ZebraFET"
-url: "https://github.com/MoschenHTS/ZebraFET"
+url: "https://doi.org/10.5281/zenodo.20183713"
 authors:
   - family-names: Moschen
     given-names: Henrique Tamanini S.
