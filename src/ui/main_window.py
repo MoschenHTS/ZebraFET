@@ -1,6 +1,7 @@
 # main_window.py
 import os
 import re
+import sys
 import logging
 import shutil
 from typing import Optional
@@ -9,7 +10,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QFrame, QStackedWidget, QButtonGroup,
                              QLabel, QMessageBox, QFileDialog, QGraphicsOpacityEffect,
                              QApplication)
-from PySide6.QtCore import (QSize, QPropertyAnimation, QEasingCurve, Qt,
+from PySide6.QtCore import (QSize, QPropertyAnimation, QEasingCurve, Qt, QEvent,
                               QSettings, QTimer, QByteArray, QParallelAnimationGroup,
                               QObject, Signal, QThread)
 from PySide6.QtGui import QIcon, QFont, QCloseEvent, QAction, QKeySequence
@@ -89,9 +90,23 @@ class MainWindow(QMainWindow):
 
         is_maximized_str = self.settings.value("maximized", "false", type=str)
         if is_maximized_str.lower() == 'true':
-            self.showMaximized()
+            if sys.platform == "win32":
+                self.showFullScreen()
+            else:
+                self.showMaximized()
 
         log.info("Window state restored.")
+
+    def changeEvent(self, event):
+        if sys.platform == "win32" and event.type() == QEvent.Type.WindowStateChange:
+            if self.windowState() & Qt.WindowState.WindowMaximized:
+                QTimer.singleShot(0, self.showFullScreen)
+        super().changeEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self.isFullScreen():
+            self.showNormal()
+        super().keyPressEvent(event)
 
     def closeEvent(self, event: QCloseEvent):
         """Stop any active load thread and save window geometry before closing."""

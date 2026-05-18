@@ -290,7 +290,7 @@ class AnalysisWorker(QObject):
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         if any([substrates, control]):
-            ax.legend(loc='upper left')
+            ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8)
         fig.tight_layout(pad=1.0)
         return fig
 
@@ -316,7 +316,7 @@ class AnalysisWorker(QObject):
         legend_handles = [Patch(facecolor=col, edgecolor='black', linewidth=0.5, label=lbl)
                           for lbl, col in seen.items()]
         if legend_handles:
-            ax.legend(handles=legend_handles, loc='upper left')
+            ax.legend(handles=legend_handles, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8)
 
         ax.set_ylim(0, 105)
         ax.set_ylabel(f"{title} (%)")

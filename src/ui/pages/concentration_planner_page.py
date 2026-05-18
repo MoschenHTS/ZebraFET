@@ -78,8 +78,16 @@ class ConcentrationPlannerPage(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["ID", "Type", "Conc. (unit)", "Wells/Rep", "Per Plate", "Color"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        _header = self.table.horizontalHeader()
+        _header.setSectionResizeMode(QHeaderView.Interactive)
+        _header.setMinimumSectionSize(60)
+        _header.resizeSection(0, 45)
+        _header.resizeSection(1, 100)
+        _header.resizeSection(2, 110)
+        _header.resizeSection(3, 85)
+        _header.resizeSection(4, 80)
+        _header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(self.ROW_HEIGHT)
@@ -287,17 +295,18 @@ class ConcentrationPlannerPage(QWidget):
         type_item.setFlags(type_item.flags() & ~Qt.ItemIsEditable)
         self.table.setItem(row, 1, type_item)
 
-        # Concentration SpinBox 
+        # Concentration SpinBox
         conc_spinbox = QDoubleSpinBox()
-        conc_spinbox.setRange(0, 10000); conc_spinbox.setDecimals(2)
+        conc_spinbox.setRange(0, 10000); conc_spinbox.setDecimals(2); conc_spinbox.setMinimumWidth(90)
         if item_type == "Control":
             conc_spinbox.setValue(0.0); conc_spinbox.setEnabled(False)
         self.table.setCellWidget(row, 2, conc_spinbox)
 
-        # Wells SpinBox 
+        # Wells SpinBox
         wells_spinbox = QSpinBox()
         wells_spinbox.setRange(1, self._plate_size)
         wells_spinbox.setValue(self.DEFAULT_WELLS)
+        wells_spinbox.setMinimumWidth(70)
         self.table.setCellWidget(row, 3, wells_spinbox)
 
         # Per Plate CheckBox 

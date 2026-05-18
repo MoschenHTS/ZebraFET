@@ -214,7 +214,9 @@ class WellWidget(QFrame):
         """Updates the text and color of the well's label based on its state."""
         is_light = self.base_color.lightness() > 128 and self.is_assigned
         text_color = "black" if is_light else "white"
-        font_size = max(8, int(min(self.width(), self.height()) / 10))
+        _size = min(self.width(), self.height()) - 4
+        _label_side = int(_size * 0.65)
+        font_size = max(6, int(_label_side / 6))
         
         display_status = self.current_status
         if "Absent" in display_status: display_status = "Absent"
@@ -283,7 +285,12 @@ class WellWidget(QFrame):
 
     def resizeEvent(self, event):
         """Repositions labels when the widget is resized."""
-        self.info_label.setGeometry(self.rect())
+        size = min(self.width(), self.height()) - 4
+        label_side = int(size * 0.65)
+        center = self.rect().center()
+        label_rect = QRect(0, 0, label_side, label_side)
+        label_rect.moveCenter(center)
+        self.info_label.setGeometry(label_rect)
         self.alert_icon.setGeometry(self.rect().adjusted(0, 4, -4, 0))
         self._update_text_content(); super().resizeEvent(event)
 

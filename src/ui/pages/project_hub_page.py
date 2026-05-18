@@ -25,8 +25,8 @@ class ClickableCard(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("Card")
-        self.setMinimumSize(250, 150)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumSize(250, 130)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -97,8 +97,8 @@ class ProjectCard(QFrame):
         self._init_ui(registry_row)
 
     def _init_ui(self, data: dict):
-        self.setMinimumSize(250, 150)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumSize(250, 130)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -107,12 +107,15 @@ class ProjectCard(QFrame):
         name_label = QLabel(data["project_name"])
         font_name = self.font(); font_name.setPointSize(16); font_name.setBold(True)
         name_label.setFont(font_name)
+        name_label.setWordWrap(True)
 
         font_info = self.font(); font_info.setPointSize(10)
         researcher_label = QLabel(f"Researcher: {data.get('main_researcher') or 'N/A'}")
         researcher_label.setFont(font_info)
+        researcher_label.setWordWrap(True)
         substance_label = QLabel(f"Substance: {data.get('substance') or 'N/A'}")
         substance_label.setFont(font_info)
+        substance_label.setWordWrap(True)
 
         num_days = data.get("num_days", 0)
         completed = data.get("completed_days_count", 0)

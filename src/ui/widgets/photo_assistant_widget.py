@@ -1,13 +1,12 @@
 import os
 import pandas as pd
-import re
 from typing import Dict, List, Any
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
                              QFileDialog, QTreeWidget, QTreeWidgetItem, QSplitter,
-                             QScrollArea, QFrame, QListWidget, QListWidgetItem, QTabWidget)
-from PySide6.QtCore import Qt, QSize, Signal
+                             QScrollArea, QFrame, QTabWidget)
+from PySide6.QtCore import Qt, Signal
 
-from PySide6.QtGui import QFont, QPixmap, QIcon
+from PySide6.QtGui import QFont, QPixmap
 
 from src.core.project_manager import ProjectManager
 from src.core.task_manager import TaskManager
@@ -46,26 +45,27 @@ class DayDocumentationWidget(QWidget):
         self.suggestion_details_label.setFont(font_details)
         self.suggestion_details_label.setWordWrap(True)
 
-        self.candidate_wells_list = QListWidget()
-        self.candidate_wells_list.setToolTip("Select a well from this list before attaching a photo.")
-        
+        self.wells_container = QWidget()
+        self.wells_layout = QVBoxLayout(self.wells_container)
+        self.wells_layout.setContentsMargins(0, 0, 0, 0)
+        self.wells_layout.setSpacing(4)
+        self.wells_scroll = QScrollArea()
+        self.wells_scroll.setWidgetResizable(True)
+        self.wells_scroll.setWidget(self.wells_container)
+        self.wells_scroll.setMaximumHeight(160)
+        self.wells_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
         self.gallery_scroll_area = QScrollArea()
         self.gallery_scroll_area.setWidgetResizable(True)
-        self.gallery_widget = QWidget() # Make gallery_widget a class attribute
+        self.gallery_widget = QWidget()
         self.gallery_layout = QHBoxLayout(self.gallery_widget)
         self.gallery_scroll_area.setWidget(self.gallery_widget)
 
-        self.attach_button = QPushButton("Attach Photo...")
-        self.attach_button.setIcon(create_icon("book-image.svg"))
-        self.attach_button.clicked.connect(self._browse_for_photo)
-        self.attach_button.setEnabled(False)
-
         right_layout.addWidget(self.suggestion_details_label)
         right_layout.addWidget(QLabel("<b>Candidate Wells:</b>"))
-        right_layout.addWidget(self.candidate_wells_list)
+        right_layout.addWidget(self.wells_scroll)
         right_layout.addWidget(QLabel("<b>Attached Photos:</b>"))
         right_layout.addWidget(self.gallery_scroll_area, 1)
-        right_layout.addWidget(self.attach_button)
         
         self.splitter.addWidget(left_panel)
         self.splitter.addWidget(right_panel)
@@ -159,7 +159,6 @@ class DayDocumentationWidget(QWidget):
 
     def _populate_suggestion_tree(self):
         self.suggestion_tree.clear()
-        self.attach_button.setEnabled(False)
         for conc_id, suggestions in sorted(self.suggestions.items()):
             conc_item = QTreeWidgetItem(self.suggestion_tree, [conc_id])
             conc_item.setFont(0, QFont("Inter", 11, QFont.Bold))
@@ -184,24 +183,19 @@ class DayDocumentationWidget(QWidget):
     def _on_suggestion_selected(self, current, previous):
         if not current or not current.data(0, Qt.UserRole):
             self.suggestion_details_label.setText("Select a suggestion from the list.")
-            self.candidate_wells_list.clear()
-            self.attach_button.setEnabled(False)
+            self._rebuild_wells_list([])
             self._update_gallery()
             return
-        
+
         sugg_data = current.data(0, Qt.UserRole)
         group_name = current.parent().text(0) if current.parent() else "General"
-        
+
         details_text = f"<b>Suggestion:</b> Document '{sugg_data['name']}' for group {group_name}."
         if sugg_data['percent'] > 0:
-             details_text += f"<br>This status was observed in <b>{len(sugg_data['wells'])} wells</b>, representing <b>{sugg_data['percent']:.1%}</b> of this group."
+            details_text += f"<br>This status was observed in <b>{len(sugg_data['wells'])} wells</b>, representing <b>{sugg_data['percent']:.1%}</b> of this group."
 
         self.suggestion_details_label.setText(details_text)
-        self.candidate_wells_list.clear()
-        for plate_idx, well_id in sugg_data['wells']:
-            self.candidate_wells_list.addItem(f"Plate {plate_idx + 1} - {well_id}")
-            
-        self.attach_button.setEnabled(True)
+        self._rebuild_wells_list(sugg_data['wells'])
         self._update_gallery()
         
     def _update_gallery(self):
@@ -245,17 +239,23 @@ class DayDocumentationWidget(QWidget):
                 
         self.gallery_layout.addStretch()
 
-    def _browse_for_photo(self):
-        current_well_item = self.candidate_wells_list.currentItem()
-        if not current_well_item: return
-        
-        item_text = current_well_item.text()
-        match = re.match(r"Plate (\d+) - (.*)", item_text)
-        if not match: return
-            
-        plate_idx = int(match.group(1)) - 1
-        well_id = match.group(2)
-        
+    def _rebuild_wells_list(self, wells):
+        while self.wells_layout.count():
+            item = self.wells_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        for plate_idx, well_id in wells:
+            row = QFrame()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(4, 2, 4, 2)
+            row_layout.addWidget(QLabel(f"Plate {plate_idx + 1}  —  {well_id}"), 1)
+            btn = QPushButton("Attach Photo...")
+            btn.setIcon(create_icon("book-image.svg"))
+            btn.clicked.connect(lambda checked, p=plate_idx, w=well_id: self._browse_for_photo(p, w))
+            row_layout.addWidget(btn)
+            self.wells_layout.addWidget(row)
+
+    def _browse_for_photo(self, plate_idx: int, well_id: str):
         file_paths, _ = QFileDialog.getOpenFileNames(self, "Select Photos", "", "Image Files (*.png *.jpg *.jpeg *.tif *.tiff)")
         if file_paths:
             for path in file_paths:
@@ -266,12 +266,7 @@ class DayDocumentationWidget(QWidget):
         self._populate_suggestion_tree()
         self._update_gallery()
 
-    # Function to remove a photo reference from the project
     def _remove_photo(self, photo_path: str):
-        """
-        Removes a photo's reference from the project data and refreshes the UI.
-        This requires a corresponding 'remove_photo' method in ProjectManager.
-        """
         self.manager.remove_photo_by_path(photo_path) 
         self._populate_suggestion_tree()
         self._update_gallery()

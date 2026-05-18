@@ -59,8 +59,16 @@ class ProjectCreationPage(QWidget):
         conc_group = QGroupBox("Concentration Plan"); conc_layout = QVBoxLayout(conc_group)
         self.table = QTableWidget(); self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels(["ID", "Type", "Conc.", "Wells/Rep", "Per Plate", "Color"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        _header = self.table.horizontalHeader()
+        _header.setSectionResizeMode(QHeaderView.Interactive)
+        _header.setMinimumSectionSize(60)
+        _header.resizeSection(0, 45)
+        _header.resizeSection(1, 90)
+        _header.resizeSection(2, 100)
+        _header.resizeSection(3, 85)
+        _header.resizeSection(4, 80)
+        _header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.table.verticalHeader().setVisible(False); self.table.verticalHeader().setDefaultSectionSize(self.ROW_HEIGHT)
         conc_layout.addWidget(self.table); left_layout.addWidget(conc_group)
 
@@ -310,12 +318,12 @@ class ProjectCreationPage(QWidget):
         self.table.setCellWidget(row, 1, type_label)
 
         conc_spinbox = QDoubleSpinBox(); conc_spinbox.setRange(0, 10000); conc_spinbox.setDecimals(2)
-        conc_spinbox.setEnabled(True)
+        conc_spinbox.setMinimumWidth(90); conc_spinbox.setEnabled(True)
         if item_type == "Control":
             conc_spinbox.setValue(0.0); conc_spinbox.setEnabled(False)
         self.table.setCellWidget(row, 2, conc_spinbox)
-        
-        wells_spinbox = QSpinBox(); wells_spinbox.setRange(1, self._plate_size); wells_spinbox.setValue(self.DEFAULT_WELLS); self.table.setCellWidget(row, 3, wells_spinbox)
+
+        wells_spinbox = QSpinBox(); wells_spinbox.setRange(1, self._plate_size); wells_spinbox.setValue(self.DEFAULT_WELLS); wells_spinbox.setMinimumWidth(70); self.table.setCellWidget(row, 3, wells_spinbox)
         per_plate_widget = QWidget(); per_plate_layout = QHBoxLayout(per_plate_widget); per_plate_layout.setAlignment(Qt.AlignCenter); per_plate_layout.setContentsMargins(0,0,0,0); per_plate_cb = QCheckBox(); per_plate_layout.addWidget(per_plate_cb); self.table.setCellWidget(row, 4, per_plate_widget)
         color_button = QPushButton()
         
