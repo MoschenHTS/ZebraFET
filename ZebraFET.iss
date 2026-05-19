@@ -11,7 +11,7 @@
 
 [Setup]
 AppName=ZebraFET
-AppVersion=2.1.1 ; Keep in sync with src/core/constants.py APP_VERSION
+AppVersion=2.1.2 ; Keep in sync with src/core/constants.py APP_VERSION
 AppPublisher=Henrique Tamanini S. Moschen
 AppPublisherURL=https://orcid.org/0000-0002-1920-8915
 AppSupportURL=https://github.com/MoschenHTS/ZebraFET
@@ -27,6 +27,8 @@ OutputBaseFilename=ZebraFET-setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
+CloseApplications=yes
+CloseApplicationsFilter=ZebraFET.exe
 WizardSizePercent=120
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
@@ -57,6 +59,13 @@ Filename: "{app}\ZebraFET.exe"; Description: "{cm:LaunchProgram,ZebraFET}"; \
 [UninstallDelete]
 ; Remove the app folder on uninstall (leaves user data in Documents\ZebraApp intact)
 Type: filesandordirs; Name: "{app}"
+
+[Registry]
+; Register .zfet file type (ZebraFET Project Archive)
+Root: HKCR; Subkey: ".zfet"; ValueType: string; ValueName: ""; ValueData: "ZebraFETProject"; Flags: uninsdeletevalue
+Root: HKCR; Subkey: "ZebraFETProject"; ValueType: string; ValueName: ""; ValueData: "ZebraFET Project Archive"; Flags: uninsdeletekey
+Root: HKCR; Subkey: "ZebraFETProject\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\ZebraFET.exe,0"
+Root: HKCR; Subkey: "ZebraFETProject\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\ZebraFET.exe"" ""%1"""
 
 [Code]
 // Optional: show a "Thank you" page or extra validation here

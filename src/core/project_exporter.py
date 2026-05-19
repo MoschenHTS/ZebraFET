@@ -91,6 +91,12 @@ def import_project(archive_path: str) -> str:
                 "Delete or rename the existing project before importing."
             )
 
+        real_target = os.path.realpath(project_dir)
+        for info in zf.infolist():
+            entry_path = os.path.realpath(os.path.join(real_target, info.filename))
+            if entry_path != real_target and not entry_path.startswith(real_target + os.sep):
+                raise ValueError(f"Archive contains an unsafe path: {info.filename!r}")
+
         os.makedirs(project_dir, exist_ok=True)
         zf.extractall(project_dir)
 

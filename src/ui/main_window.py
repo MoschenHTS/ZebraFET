@@ -413,6 +413,12 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Could not create project.\nCheck logs for details.")
             self._show_hub_internal()
 
+    def open_archive(self, path: str):
+        if not os.path.isfile(path):
+            return
+        self._show_hub_internal()
+        self.hub_page._import_project(path)
+
     def save_project(self):
         if not self.project_manager:
             return

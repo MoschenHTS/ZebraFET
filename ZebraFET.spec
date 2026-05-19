@@ -71,4 +71,27 @@ if sys.platform == 'darwin':
         name='ZebraFET.app',
         icon='resources/icons/fishapp_icon.icns',
         bundle_identifier='com.zebralab.zebrafet',
+        info_plist={
+            'CFBundleDocumentTypes': [
+                {
+                    'CFBundleTypeExtensions': ['zfet'],
+                    'CFBundleTypeName': 'ZebraFET Project Archive',
+                    'CFBundleTypeRole': 'Editor',
+                    'CFBundleTypeIconFile': 'fishapp_icon',
+                    'LSItemContentTypes': ['com.zebralab.zebrafet.zfet'],
+                }
+            ],
+            'UTExportedTypeDeclarations': [
+                {
+                    'UTTypeIdentifier': 'com.zebralab.zebrafet.zfet',
+                    'UTTypeDescription': 'ZebraFET Project Archive',
+                    'UTTypeConformsTo': ['com.pkware.zip-archive'],
+                    'UTTypeTagSpecification': {
+                        'com.apple.ostype': 'Zfet',
+                        'public.filename-extension': ['zfet'],
+                        'public.mime-type': 'application/zip',
+                    },
+                }
+            ],
+        },
     )

@@ -1,3 +1,4 @@
+import os
 import sys
 import logging
 import traceback
@@ -6,7 +7,7 @@ from PySide6.QtWidgets import (QApplication, QMessageBox, QWidget, QVBoxLayout,
                              QHBoxLayout, QLabel, QGraphicsOpacityEffect)
 from PySide6.QtCore import (QSettings, Qt, QPropertyAnimation, QEasingCurve, QTimer,
                              QObject, Signal, QStandardPaths)
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QIcon, QPixmap, QFileOpenEvent
 
 from src.ui.main_window import MainWindow
 from src.ui.theme_manager import ThemeManager
@@ -136,6 +137,32 @@ class _ExceptionRelay(QObject):
         finally:
             self._in_dialog = False
 
+class ZebraFETApp(QApplication):
+    """QApplication subclass that captures QFileOpenEvent (macOS file associations)."""
+
+    def __init__(self, argv):
+        super().__init__(argv)
+        self._pending_file: str | None = None
+        self._window = None
+
+    def set_window(self, window) -> None:
+        self._window = window
+
+    def consume_pending_file(self) -> str | None:
+        path, self._pending_file = self._pending_file, None
+        return path
+
+    def event(self, event):
+        if isinstance(event, QFileOpenEvent):
+            path = event.file()
+            if path.endswith(('.zfet', '.zebravet')) and os.path.isfile(path):
+                if self._window is not None:
+                    self._window.open_archive(path)
+                else:
+                    self._pending_file = path
+        return super().event(event)
+
+
 def setup_logging(log_file_path: str | None = None):
     log_formatter = logging.Formatter(
         '%(asctime)s - %(levelname)s - [%(name)s] - %(message)s',
@@ -154,6 +181,27 @@ def setup_logging(log_file_path: str | None = None):
     logging.info("Logging configured successfully.")
 
 
+def _kick_off_update_check(window, settings):
+    from src.core.task_manager import TaskManager
+    from src.core.update_checker import check_for_update
+
+    worker = TaskManager.instance().submit(check_for_update)
+    worker.signals.result.connect(lambda info: _on_update_result(info, window, settings))
+
+
+def _on_update_result(info, window, settings):
+    if info is None:
+        return
+    if settings.value("update/skipped_version", "", type=str) == info.version:
+        return
+
+    from src.ui.dialogs.update_dialog import UpdateAvailableDialog
+    dlg = UpdateAvailableDialog(APP_VERSION, info, parent=window)
+    dlg.exec()
+    if dlg.choice == UpdateAvailableDialog.SKIP:
+        settings.setValue("update/skipped_version", info.version)
+
+
 def main():
     # Console-only logging until QApplication (and thus QStandardPaths) is available
     setup_logging()
@@ -161,19 +209,16 @@ def main():
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
-    app = QApplication(sys.argv)
+    app = ZebraFETApp(sys.argv)
     app.setApplicationName("ZebraFET Hub")
     app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName("ZebraFET")
 
     # Add file handler now that QStandardPaths is available
-    import os
     _app_data = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
     os.makedirs(_app_data, exist_ok=True)
     _log_path = os.path.join(_app_data, "zebrafet.log")
-    _fh = __import__('logging.handlers', fromlist=['RotatingFileHandler']).RotatingFileHandler(
-        _log_path, maxBytes=5 * 1024 * 1024, backupCount=3
-    )
+    _fh = RotatingFileHandler(_log_path, maxBytes=5 * 1024 * 1024, backupCount=3)
     _fh.setFormatter(logging.Formatter(
         '%(asctime)s - %(levelname)s - [%(name)s] - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
@@ -225,13 +270,24 @@ def main():
     theme_manager = ThemeManager(app, settings)
     
     window = MainWindow(settings, theme_manager)
-    
+    app.set_window(window)
+
     theme_manager.apply_last_theme()
-    
+
     QTimer.singleShot(500, window.show)
-    
+
     if splash:
         QTimer.singleShot(600, splash.close_splash)
+
+    startup_file = app.consume_pending_file()
+    if not startup_file and len(sys.argv) > 1:
+        candidate = sys.argv[1]
+        if candidate.endswith(('.zfet', '.zebravet')) and os.path.isfile(candidate):
+            startup_file = candidate
+    if startup_file:
+        QTimer.singleShot(900, lambda: window.open_archive(startup_file))
+
+    QTimer.singleShot(3000, lambda: _kick_off_update_check(window, settings))
 
     try:
         sys.exit(app.exec())

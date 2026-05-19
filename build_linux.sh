@@ -16,6 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 APP_NAME="ZebraFET"
+VERSION="2.1.2"  # Keep in sync with src/core/constants.py APP_VERSION
 DIST_DIR="dist"
 BUILD_DIR="build"
 APPDIR="${BUILD_DIR}/AppDir"
@@ -43,11 +44,12 @@ Type=Application
 Name=ZebraFET
 GenericName=Fish Embryo Toxicity Test Assistant
 Comment=Standardized zebrafish embryo toxicity test assistant (OECD TG 236)
-Exec=ZebraFET
+Exec=ZebraFET %F
 Icon=ZebraFET
 Categories=Science;Education;
 Keywords=toxicology;FET;OECD;zebrafish;
 StartupNotify=true
+MimeType=application/x-zebrafet;application/zip;
 DESKTOP
 
 # AppRun wrapper (entry point used by AppImage runtime)

@@ -8,7 +8,8 @@ import sys
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QLabel,
                              QHBoxLayout, QMessageBox, QScrollArea, QGridLayout,
-                             QMenu, QSizePolicy, QFrame, QFileDialog, QGraphicsBlurEffect)
+                             QMenu, QSizePolicy, QFrame, QFileDialog, QGraphicsBlurEffect,
+                             QApplication)
 from PySide6.QtCore import Qt, Signal, QObject, QThread
 from PySide6.QtGui import QFont, QPixmap, QDragEnterEvent, QDropEvent, QResizeEvent
 
@@ -174,6 +175,7 @@ class ProjectHubPage(QWidget):
         super().__init__(parent)
         self.setAcceptDrops(True)
         self._registry = ProjectRegistry(get_registry_db_path())
+        self._stretch_row: int = -1
         self._init_ui()
         self.populate_project_grid()
 
@@ -259,6 +261,13 @@ class ProjectHubPage(QWidget):
                 self.drop_overlay.show()
                 self.drop_overlay.raise_()
 
+    def dragMoveEvent(self, event):
+        mime = event.mimeData()
+        if mime.hasUrls() and len(mime.urls()) == 1:
+            path = mime.urls()[0].toLocalFile()
+            if os.path.isdir(path) or path.endswith((".zfet", ".zebravet")):
+                event.acceptProposedAction()
+
     def dragLeaveEvent(self, event):
         self.blur_effect.setEnabled(False)
         self.drop_overlay.hide()
@@ -277,6 +286,9 @@ class ProjectHubPage(QWidget):
     # ------------------------------------------------------------------
 
     def populate_project_grid(self):
+        if self._stretch_row >= 0:
+            self.project_grid_layout.setRowStretch(self._stretch_row, 0)
+
         while self.project_grid_layout.count():
             child = self.project_grid_layout.takeAt(0)
             if child.widget():
@@ -313,6 +325,9 @@ class ProjectHubPage(QWidget):
             self.project_grid_layout.addWidget(card, row, col)
             col += 1
 
+        self._stretch_row = row + 1
+        self.project_grid_layout.setRowStretch(self._stretch_row, 1)
+
     def set_ui_enabled(self, enabled: bool):
         self.scroll_area.setEnabled(enabled)
         self.blur_effect.setEnabled(not enabled)
@@ -347,8 +362,7 @@ class ProjectHubPage(QWidget):
             self.project_path_selected.emit(os.path.dirname(db_path))
 
     def _import_project(self, archive_path: str = ""):
-        """Open a .zfet (or legacy .zebravet) archive and import it into the projects directory."""
-        from src.core import project_exporter  # local import — avoids circular at module level
+        from src.core import project_exporter  # noqa: PLC0415
 
         if not archive_path:
             archive_path, _ = QFileDialog.getOpenFileName(
@@ -360,14 +374,20 @@ class ProjectHubPage(QWidget):
             return
 
         try:
+            QApplication.setOverrideCursor(Qt.WaitCursor)
             project_dir = project_exporter.import_project(archive_path)
-            self.populate_project_grid()
-            self.project_path_selected.emit(project_dir)
         except FileExistsError as e:
             QMessageBox.warning(self, "Import Failed — Project Already Exists", str(e))
+            return
         except Exception as e:
             log.error(f"Import failed: {e}", exc_info=True)
             QMessageBox.critical(self, "Import Failed", f"Could not import project:\n{e}")
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        self.populate_project_grid()
+        self.project_path_selected.emit(project_dir)
 
     def _export_project(self, project_dir_path: str):
         """Export a project from the hub (right-click → Export)."""
