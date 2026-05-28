@@ -7,9 +7,6 @@ or Qt dependency required.
 """
 import os
 
-import matplotlib
-matplotlib.use("Agg")
-
 import pandas as pd
 import pytest
 from docx import Document

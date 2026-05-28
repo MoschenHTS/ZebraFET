@@ -7,6 +7,9 @@ biostatistics, and the database package can be imported without Qt.
 import os
 import sys
 
+import matplotlib
+matplotlib.use("Agg")
+
 # Insert the project root (one level above this file) at the front of sys.path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
