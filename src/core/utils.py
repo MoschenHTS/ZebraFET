@@ -2,7 +2,6 @@
 import os
 import sys
 import logging
-from PySide6.QtGui import QIcon
 
 # Configure logging
 log = logging.getLogger(__name__)
@@ -26,10 +25,11 @@ def resource_path(relative_path: str) -> str:
 
 _icon_cache: dict = {}
 
-def create_icon(icon_name: str) -> QIcon:
+def create_icon(icon_name: str):
     """
     Returns a cached QIcon for the given icon name, loading from disk only once.
     """
+    from PySide6.QtGui import QIcon
     if icon_name not in _icon_cache:
         _icon_cache[icon_name] = QIcon(resource_path(f"resources/icons/{icon_name}"))
     return _icon_cache[icon_name]
