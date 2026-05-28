@@ -161,12 +161,15 @@ class PlateLayoutPage(QWidget):
         list of well IDs for a specific plate.
         """
         plate_specific_layout = self.temp_layout.setdefault(str(plate_index), {})
+        plate_widget = self.plate_widgets.get(plate_index)
         for well_id in well_ids:
             if self.current_brush_id is None:
-                if well_id in plate_specific_layout: del plate_specific_layout[well_id]
-            else: plate_specific_layout[well_id] = self.current_brush_id
-        plate_widget = self.plate_widgets.get(plate_index)
-        if plate_widget: plate_widget.load_layout_from_data(plate_specific_layout)
+                if well_id in plate_specific_layout:
+                    del plate_specific_layout[well_id]
+            else:
+                plate_specific_layout[well_id] = self.current_brush_id
+            if plate_widget:
+                plate_widget.set_well_concentration(well_id, self.current_brush_id)
         self.load_counters()
 
     def load_counters(self, *args) -> None:

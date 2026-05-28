@@ -177,7 +177,7 @@ def initialize_project_db(conn) -> None:
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=30000")
-    conn.execute("PRAGMA cache_size=-65536")
+    conn.execute("PRAGMA cache_size=-16384")
     conn.execute("PRAGMA temp_store=MEMORY")
     with conn:
         for stmt in PROJECT_DB_SCHEMA:
@@ -187,7 +187,7 @@ def initialize_project_db(conn) -> None:
             import datetime
             conn.execute(
                 "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
-                (CURRENT_SCHEMA_VERSION, datetime.datetime.utcnow().isoformat()),
+                (CURRENT_SCHEMA_VERSION, datetime.datetime.now(datetime.timezone.utc).isoformat()),
             )
 
 

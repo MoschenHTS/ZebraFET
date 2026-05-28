@@ -9,7 +9,7 @@ import pandas as pd
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
                              QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
                              QGroupBox, QTabWidget, QFileDialog, QMessageBox, QDialog,
-                             QDialogButtonBox, QFrame, QSizePolicy)
+                             QDialogButtonBox, QFrame, QSizePolicy, QDoubleSpinBox)
 from PySide6.QtCore import Qt, QObject, Signal, QThread
 from PySide6.QtGui import QFont, QIcon, QResizeEvent
 
@@ -23,7 +23,8 @@ from src.core.project_manager import ProjectManager
 from src.export.report_generator import ReportGenerator
 from src.core.utils import resource_path
 from src.ui.components import SpinningIcon, LoadingOverlay
-from src.core.biostatistics import logistic_function, calculate_lc50_robust, calculate_noec_loec_with_correction
+from src.core.biostatistics import (logistic_function, calculate_lc50_robust,
+                                    select_best_model_lc50, calculate_noec_loec_with_correction)
 from src.core.constants import (
     STATUS_DEAD_EMBRYO as STATUS_EMBRYO_DEAD,
     STATUS_DEAD_HATCHED as STATUS_HATCHED_DEAD,
@@ -82,10 +83,18 @@ class AnalysisWorker(QObject):
     finished = Signal(dict)
     error = Signal(str)
 
-    def __init__(self, manager: ProjectManager, day_selection: str):
+    def __init__(self, obs_rows: list, plate_layout: dict, concentrations: list,
+                 project_info: dict, day_selection: str,
+                 mode: str = "LL4", bottom: float = None, top: float = None):
         super().__init__()
-        self.manager = manager
+        self.obs_rows = obs_rows
+        self.plate_layout = plate_layout
+        self.concentrations = concentrations
+        self.project_info = project_info
         self.day_selection = day_selection
+        self.mode = mode
+        self.bottom = bottom
+        self.top = top
         self._cancelled = False
 
     def cancel(self) -> None:
@@ -128,7 +137,7 @@ class AnalysisWorker(QObject):
             if self._cancelled:
                 return
 
-            conc_unit = self.manager.get_project_info().get("concentration_unit", "unit")
+            conc_unit = self.project_info.get("concentration_unit", "unit")
             results['mortality_plot_figure'] = self._plot_mortality(plot_data_mortality, lc50_results, conc_unit)
             if self._cancelled:
                 return
@@ -148,10 +157,9 @@ class AnalysisWorker(QObject):
             self.error.emit(f"An unexpected error occurred during analysis: {e}")
 
     def _create_results_dataframe(self) -> pd.DataFrame:
-        obs_rows = self.manager.get_all_well_observations_with_layout()
         records = []
 
-        for row in obs_rows:
+        for row in self.obs_rows:
             if not row.get("conc_id"):
                 continue
             sublethal_raw = row.get("sublethal_conditions") or ""
@@ -188,8 +196,7 @@ class AnalysisWorker(QObject):
         ).reset_index()
 
         conc_totals = Counter()
-        plate_layout = self.manager.get_all_plate_layouts()
-        for plate_id, wells in plate_layout.items():
+        for plate_id, wells in self.plate_layout.items():
             for well_id, conc_id in wells.items():
                 conc_totals[conc_id] += 1
         
@@ -216,7 +223,7 @@ class AnalysisWorker(QObject):
         final_summary['total'] = final_summary['conc_id'].map(conc_totals)
         final_summary[['dead', 'hatched', 'malformed']] = final_summary[['dead', 'hatched', 'malformed']].fillna(0)
 
-        concentrations_list = self.manager.get_concentrations()
+        concentrations_list = self.concentrations
         if concentrations_list:
             all_conc_info = pd.DataFrame(concentrations_list)[['id', 'type', 'value']].rename(
                 columns={'id': 'conc_id', 'type': 'conc_type', 'value': 'conc_value'}
@@ -237,8 +244,9 @@ class AnalysisWorker(QObject):
         return plot_data
 
     def _calculate_lc50(self, plot_data: list) -> dict:
-        """Delegate to the standalone biostatistics module."""
-        return calculate_lc50_robust(plot_data)
+        if self.mode == "auto":
+            return select_best_model_lc50(plot_data)
+        return calculate_lc50_robust(plot_data, bottom=self.bottom, top=self.top)
 
     def _calculate_noec_loec(self, summary_df: pd.DataFrame) -> Dict[str, Any]:
         """Delegate to the standalone biostatistics module."""
@@ -382,15 +390,16 @@ class AnalysisWorker(QObject):
 class ReportWorker(QObject):
     finished = Signal(bool, str)
 
-    def __init__(self, manager: ProjectManager, file_path: str, analysis_results: Dict):
+    def __init__(self, snapshot: dict, project_dir: str, file_path: str, analysis_results: Dict):
         super().__init__()
-        self.manager = manager
+        self.snapshot = snapshot
+        self.project_dir = project_dir
         self.file_path = file_path
         self.analysis_results = analysis_results
 
     def run(self):
         try:
-            generator = ReportGenerator(self.manager, self.analysis_results)
+            generator = ReportGenerator(self.snapshot, self.project_dir, self.analysis_results)
             success = generator.generate_report(self.file_path)
             message = self.file_path if success else "An unknown error occurred during report generation."
             self.finished.emit(success, message)
@@ -472,6 +481,43 @@ class ResultsAnalysisWidget(QWidget):
         self.control_layout.addWidget(self.export_btn)
         main_layout.addLayout(self.control_layout)
 
+        model_row = QHBoxLayout()
+        model_row.addWidget(QLabel("Model:"))
+        self.model_combo = QComboBox()
+        self.model_combo.addItem("Auto-select (AICc)", "auto")
+        self.model_combo.addItem("4PL — all free", "LL4")
+        self.model_combo.addItem("3PL — fix bottom", "LL3_bottom")
+        self.model_combo.addItem("3PL — fix top", "LL3_top")
+        self.model_combo.addItem("2PL — fix both", "LL2")
+        model_row.addWidget(self.model_combo)
+        model_row.addSpacing(16)
+        self.bottom_label = QLabel("Bottom:")
+        self.bottom_spin = QDoubleSpinBox()
+        self.bottom_spin.setRange(0.0, 100.0)
+        self.bottom_spin.setSingleStep(1.0)
+        self.bottom_spin.setDecimals(1)
+        self.bottom_spin.setSuffix(" %")
+        self.bottom_spin.setValue(0.0)
+        self.top_label = QLabel("Top:")
+        self.top_spin = QDoubleSpinBox()
+        self.top_spin.setRange(0.0, 100.0)
+        self.top_spin.setSingleStep(1.0)
+        self.top_spin.setDecimals(1)
+        self.top_spin.setSuffix(" %")
+        self.top_spin.setValue(100.0)
+        model_row.addWidget(self.bottom_label)
+        model_row.addWidget(self.bottom_spin)
+        model_row.addSpacing(8)
+        model_row.addWidget(self.top_label)
+        model_row.addWidget(self.top_spin)
+        model_row.addStretch()
+        self.model_combo.currentIndexChanged.connect(self._on_model_changed)
+        self.model_combo.currentIndexChanged.connect(self.run_analysis)
+        self.bottom_spin.editingFinished.connect(self.run_analysis)
+        self.top_spin.editingFinished.connect(self.run_analysis)
+        self._on_model_changed()
+        main_layout.addLayout(model_row)
+
         results_layout = QHBoxLayout()
         left_side_layout = QVBoxLayout()
         self.table = QTableWidget()
@@ -491,12 +537,14 @@ class ResultsAnalysisWidget(QWidget):
         
         endpoints_group = QGroupBox("Calculated Endpoints")
         endpoints_layout = QVBoxLayout(endpoints_group)
+        self.model_label = QLabel("<b>Model:</b> \u2014")
         self.lc50_label = QLabel("<b>LC50:</b> Not calculated")
         self.slope_label = QLabel("<b>Slope:</b> Not calculated")
         self.r_squared_label = QLabel("<b>R\u00b2:</b> Not calculated")
         self.noec_label = QLabel("<b>NOEC:</b> Not calculated")
         self.loec_label = QLabel("<b>LOEC:</b> Not calculated")
-        for label in [self.lc50_label, self.slope_label, self.r_squared_label, self.noec_label, self.loec_label]:
+        for label in [self.model_label, self.lc50_label, self.slope_label,
+                      self.r_squared_label, self.noec_label, self.loec_label]:
             endpoints_layout.addWidget(label)
         left_side_layout.addWidget(endpoints_group)
 
@@ -538,13 +586,33 @@ class ResultsAnalysisWidget(QWidget):
             self._clear_results()
             return
 
-        # Cancel any in-flight analysis so its result doesn't overwrite this one
-        if self.analysis_worker is not None:
-            self.analysis_worker.cancel()
+        if self.analysis_thread is not None and self.analysis_thread.isRunning():
+            if self.analysis_worker is not None:
+                self.analysis_worker.cancel()
+                try:
+                    self.analysis_worker.finished.disconnect()
+                    self.analysis_worker.error.disconnect()
+                except (TypeError, RuntimeError):
+                    pass
+            self.analysis_thread.quit()
+            if not self.analysis_thread.wait(2000):
+                log.warning("Previous analysis thread did not stop within 2s; abandoning it.")
+        self.analysis_worker = None
+        self.analysis_thread = None
 
         self._set_ui_enabled(False, "Calculating, please wait...")
+        mode = self.model_combo.currentData()
+        bottom = self.bottom_spin.value() if mode in ("LL3_bottom", "LL2") else None
+        top = self.top_spin.value() if mode in ("LL3_top", "LL2") else None
+        obs_rows = self.manager.get_all_well_observations_with_layout()
+        plate_layout = self.manager.get_all_plate_layouts()
+        concentrations = self.manager.get_concentrations()
+        project_info = self.manager.get_project_info()
         self.analysis_thread = QThread()
-        self.analysis_worker = AnalysisWorker(self.manager, day_selection)
+        self.analysis_worker = AnalysisWorker(
+            obs_rows, plate_layout, concentrations, project_info,
+            day_selection, mode=mode, bottom=bottom, top=top,
+        )
         self.analysis_worker.moveToThread(self.analysis_thread)
         self.analysis_worker.finished.connect(self._handle_analysis_results)
         self.analysis_worker.error.connect(self._handle_analysis_error)
@@ -688,8 +756,10 @@ class ResultsAnalysisWidget(QWidget):
             return
 
         self._set_ui_enabled(False, "Generating report...")
+        snapshot = self.manager.get_report_snapshot()
+        project_dir = self.manager.get_project_directory()
         self.report_thread = QThread()
-        self.report_worker = ReportWorker(self.manager, file_path, self.analysis_results)
+        self.report_worker = ReportWorker(snapshot, project_dir, file_path, self.analysis_results)
         self.report_worker.moveToThread(self.report_thread)
         self.report_thread.started.connect(self.report_worker.run)
         self.report_worker.finished.connect(self._handle_report_finished)
@@ -720,11 +790,22 @@ class ResultsAnalysisWidget(QWidget):
         
         self.invalid_test_label.hide()
 
+    def _on_model_changed(self):
+        mode = self.model_combo.currentData()
+        show_bottom = mode in ("LL3_bottom", "LL2")
+        show_top = mode in ("LL3_top", "LL2")
+        self.bottom_label.setVisible(show_bottom)
+        self.bottom_spin.setVisible(show_bottom)
+        self.top_label.setVisible(show_top)
+        self.top_spin.setVisible(show_top)
+
     def _set_ui_enabled(self, enabled: bool, message: str = "Processing..."):
-        """Enables or disables UI elements and toggles the loading overlay."""
         self.day_selector.setEnabled(enabled)
         self.recalculate_btn.setEnabled(enabled)
         self.export_btn.setEnabled(enabled)
+        self.model_combo.setEnabled(enabled)
+        self.bottom_spin.setEnabled(enabled)
+        self.top_spin.setEnabled(enabled)
         
         if not enabled:
             self.loading_overlay.setText(message)
@@ -752,8 +833,13 @@ class ResultsAnalysisWidget(QWidget):
             self.r_squared_label.setText(base_text.format(label="R\u00b2"))
             self.noec_label.setText(base_text.format(label="NOEC"))
             self.loec_label.setText(base_text.format(label="LOEC"))
+            self.model_label.setText("<b>Model:</b> —")
             return
         
+        model_info = lc50_results.get("model_info") or {}
+        model_text = model_info.get("display_name") or "—"
+        self.model_label.setText(f"<b>Model:</b> {model_text}")
+
         lc50_val = lc50_results.get('lc50', 'N/A')
         noec_val = noec_loec_results.get('noec', 'N/A')
         loec_val = noec_loec_results.get('loec', 'N/A')

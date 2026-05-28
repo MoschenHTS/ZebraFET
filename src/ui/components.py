@@ -44,7 +44,7 @@ class FloatingLabelLineEdit(QWidget):
             parent (QWidget, optional): The parent widget. Defaults to None.
         """
         super().__init__(parent)
-        self.setMinimumHeight(52)
+        self.setMinimumHeight(60)
         self._placeholder_text = placeholder_text
 
         self.line_edit = QLineEdit(self)
@@ -89,8 +89,10 @@ class FloatingLabelLineEdit(QWidget):
         
         label_height = self.label.fontMetrics().height()
         line_edit_y = label_height + v_padding_up
-        # Provide more room for the line edit itself to avoid text clipping
-        line_edit_height = self.height() - line_edit_y - 8
+        # Use the line edit's minimum sizeHint so text never clips on Windows
+        # (Segoe UI has taller font metrics than macOS San Francisco at the same pt size)
+        min_le_h = self.line_edit.sizeHint().height()
+        line_edit_height = max(min_le_h, self.height() - line_edit_y - 2)
         self.line_edit.setGeometry(h_padding, line_edit_y,
             self.width() - (2 * h_padding), line_edit_height)
         
@@ -296,7 +298,9 @@ class WellWidget(QFrame):
 
     def paintEvent(self, event):
         """Custom painting to draw the well as a circle with state indicators."""
-        painter = QPainter(self); painter.setRenderHint(QPainter.Antialiasing)
+        painter = QPainter(self)
+        if self.is_assigned or self.is_selected:
+            painter.setRenderHint(QPainter.Antialiasing)
         rect = self.rect(); size = min(rect.width(), rect.height()) - 4
         draw_rect = QRect(0, 0, size, size); draw_rect.moveCenter(rect.center())
         bg_color = self.base_color if self.is_assigned else QColor(73, 80, 87, 80)
@@ -393,11 +397,19 @@ class PlateWidget(QWidget):
             well_widget.set_selected(well_id == self._selected_well_id)
 
     def update_well_status(self, well_id: str, status: str):
-        """Updates the visual status of a single well using a plate-scoped batch query."""
+        """Updates the visual status of a single well."""
         if well_id in self.well_widgets:
-            plate_data = self.manager.get_well_observations_for_day(self.day_index)
-            well_data = plate_data.get(str(self.plate_index), {}).get(well_id, {})
+            well_data = self.manager.get_well_data(self.day_index, self.plate_index, well_id)
             self.well_widgets[well_id].update_well_details(well_data)
+
+    def set_well_concentration(self, well_id: str, conc_id: Optional[str]) -> None:
+        """Updates the concentration color of a single well without reloading the whole plate."""
+        if well_id not in self.well_widgets:
+            return
+        conc_map = self.manager.get_concentration_map()
+        conc_data = conc_map.get(conc_id) if conc_id else None
+        color = QColor(conc_data['color']) if conc_data else None
+        self.well_widgets[well_id].set_concentration(color)
 
     def mousePressEvent(self, event):
         """Handles mouse press to initiate rubber band selection."""

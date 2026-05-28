@@ -96,6 +96,8 @@ class AboutDialog(QDialog):
 
     def _on_tab_changed(self, index: int) -> None:
         tab_content_widget = self.tab_widget.widget(index)
+        if tab_content_widget is None:
+            return
         if tab_content_widget.layout() is None:
             tab_text = self.tab_widget.tabText(index)
             

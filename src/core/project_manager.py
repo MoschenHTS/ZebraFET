@@ -7,8 +7,6 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
-from PIL import Image, UnidentifiedImageError
-
 from src.database.schema import initialize_project_db
 from src.database.migrations import MigrationRunner
 from src.core.constants import LIVE_STATUSES as _LIVE_STATUSES, DEAD_STATUSES as _DEAD_STATUSES
@@ -74,7 +72,7 @@ class ProjectManager:
         conn.execute("PRAGMA synchronous=NORMAL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=30000")
-        conn.execute("PRAGMA cache_size=-65536")
+        conn.execute("PRAGMA cache_size=-16384")
         conn.execute("PRAGMA temp_store=MEMORY")
         return conn
 
@@ -274,15 +272,23 @@ class ProjectManager:
         required_plates: int,
     ) -> None:
         """Replace all concentration groups and update the settings row."""
-        self._conc_map_cache = None  # Invalidate cache
+        self._conc_map_cache = None
+        new_ids = {c["id"] for c in concentrations}
         with self._conn:
-            self._conn.execute("DELETE FROM concentration_groups")
             for i, c in enumerate(concentrations):
                 self._conn.execute(
                     """
                     INSERT INTO concentration_groups
                         (id, type, value, replicates, wells, per_plate, color, sort_order)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        type       = excluded.type,
+                        value      = excluded.value,
+                        replicates = excluded.replicates,
+                        wells      = excluded.wells,
+                        per_plate  = excluded.per_plate,
+                        color      = excluded.color,
+                        sort_order = excluded.sort_order
                     """,
                     (
                         c["id"], c["type"], c.get("value", 0),
@@ -291,6 +297,14 @@ class ProjectManager:
                         c.get("color", "#3498db"), i,
                     ),
                 )
+            if new_ids:
+                placeholders = ",".join("?" * len(new_ids))
+                self._conn.execute(
+                    f"DELETE FROM concentration_groups WHERE id NOT IN ({placeholders})",
+                    list(new_ids),
+                )
+            else:
+                self._conn.execute("DELETE FROM concentration_groups")
             self._conn.execute(
                 """
                 INSERT INTO concentration_settings (id, required_embryos, required_plates)
@@ -541,6 +555,7 @@ class ProjectManager:
         if not source_photo_path or not os.path.isfile(source_photo_path):
             log.error(f"Photo add failed: source not found at '{source_photo_path}'")
             return None
+        from PIL import Image, UnidentifiedImageError
         try:
             # Ensure the observation row exists so the FK won't fail
             with self._conn:
@@ -635,6 +650,14 @@ class ProjectManager:
     def get_full_photo_path(self, relative_path: str) -> str:
         parts = relative_path.replace("\\", "/").split("/")
         return os.path.join(self.project_dir, *parts)
+
+    def get_report_snapshot(self) -> Dict[str, Any]:
+        data = self.get_full_project_data()
+        data["plate_format"] = self.get_plate_format()
+        data["concentration_map"] = self.get_concentration_map()
+        data["plate_dimensions"] = self.get_plate_dimensions()
+        data["photos_with_metadata"] = self.get_all_photos_with_metadata()
+        return data
 
     # ------------------------------------------------------------------
     # Registry sync

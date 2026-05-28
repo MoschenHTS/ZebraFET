@@ -105,7 +105,7 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_path }}
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 1
 
   # ── Create GitHub Release with all three installers ─────────────────────
   release:
@@ -141,5 +141,34 @@ jobs:
             **macOS**: double-click the `.pkg` to run the installer wizard.
             **Windows**: double-click `ZebraFET-setup.exe` to run the installer wizard.
             **Linux**: `chmod +x ZebraFET-x86_64.AppImage && ./ZebraFET-x86_64.AppImage`
+
+            ---
+
+            ## What's New
+
+            ### Statistical Methods
+            **Bootstrap confidence intervals for LC50** — Confidence intervals are now estimated by case-resampling bootstrap (500 iterations, seed = 15) instead of the delta method, providing more robust uncertainty quantification for typical FET experimental designs.
+
+            **Multi-model dose-response fitting** — LC50 estimation now fits two-, three-, and four-parameter logistic models (2PL, 3PL, 4PL) and selects the best by corrected AIC (AICc). The selected model and full model comparison table are reported in the Word report. Manual model selection remains available.
+
+            ### Bug Fixes
+            - Fixed text clipping in input fields on Windows due to Segoe UI font metrics
+            - Fixed custom data directory being ignored on some platforms (QSettings format)
+            - Fixed lambda closure causing stale thread reference on project load
+            - Fixed colour extraction for concentration groups using custom-styled buttons
+            - Fixed crash when switching About dialog tabs rapidly
+            - Improved app shutdown: active background workers and DB connections now close cleanly on exit
+
+            ### UI Improvements
+            - Bundled Inter font now registered at startup for consistent cross-platform rendering
+            - Impossible state transition warnings now shown once per well/day instead of on every click
+            - Notes field debounced — DB write triggered 400 ms after typing stops, not on every keystroke
+            - Photo tabs load lazily (only when first visited) instead of all at once on project open
+
+            ### Performance Improvements
+            - Plate layout painting updates individual wells instead of reloading the full plate on each brush stroke
+            - Well status updates query a single well instead of the full day's observations
+            - Thumbnail scaling cached per path — photos no longer re-scaled on every gallery refresh
+            - Antialiasing skipped for unassigned wells during plate paint
           files: installers/**/*
           fail_on_unmatched_files: true

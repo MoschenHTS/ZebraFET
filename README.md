@@ -2,7 +2,7 @@
 
 **ZebraFET** is a desktop application for conducting, managing, and analysing acute zebrafish embryo toxicity tests (Fish Embryo Toxicity — FET) following [OECD TG 236](https://www.oecd.org/en/publications/test-no-236-fish-embryo-acute-toxicity-fet-test_9789264203709-en.html).
 
-It handles the full experimental workflow: project setup, daily well scoring, photo management, statistical analysis (LC50, NOEC/LOEC), OECD validity checks, and Word/PDF report generation — all from a single interface.
+It handles the full experimental workflow: project setup, daily well scoring, photo management, statistical analysis (LC50, NOEC/LOEC), OECD validity checks, and Word (.docx) report generation — all from a single interface.
 
 ---
 

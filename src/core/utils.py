@@ -40,7 +40,12 @@ def _get_base_data_dir() -> str:
     OS default if no custom directory has been set.
     """
     from PySide6.QtCore import QSettings
-    settings = QSettings("ZebraFET", "ZebraFET Hub")
+    settings = QSettings(
+        QSettings.Format.IniFormat,
+        QSettings.Scope.UserScope,
+        "ZebraFET",
+        "ZebraFET Hub",
+    )
     custom = settings.value("setup/data_dir", "")
     if custom:
         parent = os.path.dirname(custom) or custom

@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QApplication, QMessageBox, QWidget, QVBoxLayout,
                              QHBoxLayout, QLabel, QGraphicsOpacityEffect)
 from PySide6.QtCore import (QSettings, Qt, QPropertyAnimation, QEasingCurve, QTimer,
                              QObject, Signal, QStandardPaths)
-from PySide6.QtGui import QIcon, QPixmap, QFileOpenEvent
+from PySide6.QtGui import QIcon, QPixmap, QFileOpenEvent, QFontDatabase
 
 from src.ui.main_window import MainWindow
 from src.ui.theme_manager import ThemeManager
@@ -213,6 +213,17 @@ def main():
     app.setApplicationName("ZebraFET Hub")
     app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName("ZebraFET")
+
+    # Register bundled Inter font so the QSS "font-family: Inter" rule resolves
+    # consistently across platforms. Without this, Windows falls back to Segoe UI,
+    # which has taller line metrics and causes descenders to clip in inputs.
+    for _font in (
+        "resources/fonts/Inter/Inter-VariableFont_opsz,wght.ttf",
+        "resources/fonts/Inter/Inter-Italic-VariableFont_opsz,wght.ttf",
+    ):
+        _fid = QFontDatabase.addApplicationFont(resource_path(_font))
+        if _fid == -1:
+            log.warning(f"Failed to load bundled font: {_font}")
 
     # Add file handler now that QStandardPaths is available
     _app_data = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)

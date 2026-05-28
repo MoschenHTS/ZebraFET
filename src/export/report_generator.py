@@ -17,7 +17,6 @@ from docx.oxml.ns import qn
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from src.core.project_manager import ProjectManager
 from src.core.constants import HATCHED_STATUSES
 from src.core.utils import resource_path
 
@@ -36,9 +35,9 @@ class ReportGenerator:
     closely following the OECD TG 236 guidelines.
     """
 
-    def __init__(self, manager: ProjectManager, analysis_results: Dict[str, Any]) -> None:
-        self.manager = manager
-        self.project_data = manager.get_full_project_data()
+    def __init__(self, snapshot: Dict[str, Any], project_dir: str, analysis_results: Dict[str, Any]) -> None:
+        self.project_data = snapshot
+        self.project_dir = project_dir
         self.analysis_results = analysis_results
         self.document: Document = Document()
         self.figure_count: int = 0
@@ -166,7 +165,7 @@ class ReportGenerator:
 
         self.document.add_heading("1.4 Experimental Design and Exposure", level=2)
         self.document.add_heading("Test Concentrations and Controls", level=3)
-        concentrations = self.manager.get_concentrations()
+        concentrations = self.project_data.get("concentration_settings", {}).get("concentrations", [])
         substrate_concs = [str(c['value']) for c in concentrations if c['type'] == 'Substrate']
         conc_text = ", ".join(substrate_concs) if substrate_concs else "[Not specified]"
         conc_unit = self.project_data.get("concentration_unit", "unit")
@@ -223,12 +222,14 @@ class ReportGenerator:
         )
 
         self.document.add_heading("1.6 Statistical Analysis and Validity Criteria", level=2)
+        model_info = self.analysis_results.get("lc50_results", {}).get("model_info", {})
+        lc50_model_sentence = self._build_lc50_methods_sentence(model_info)
         self.document.add_paragraph(
             "The test was conducted following the OECD Guideline for the Testing of Chemicals, No. 236: Fish Embryo Acute Toxicity (FET) Test. "
             "Data acquisition and analysis were performed using the ZebraFET — Standardized Zebrafish Embryo Toxicity Test Assistant software. "
             "The validity of the test is contingent upon the mortality in the control group(s) not exceeding 10% at the end of the test, as specified in the guideline. "
             "Statistical analyses were performed using Fisher's Exact Test with Bonferroni correction for multiple comparisons to determine the No Observed Effect Concentration (NOEC) and Lowest Observed Effect Concentration (LOEC). "
-            "LC50 values were estimated by fitting mortality data to a four-parameter logistic (4PL) model using non-linear regression."
+            f"{lc50_model_sentence}"
         )
 
     # Results #
@@ -300,6 +301,8 @@ class ReportGenerator:
                 f"and the Lowest Observed Effect Concentration (LOEC) was {loec}."
             )
 
+        self._add_curve_fitting_section()
+
         mortality_fig = self.analysis_results.get("mortality_plot_figure")
         if mortality_fig:
             self._add_plot_to_document(
@@ -352,14 +355,14 @@ class ReportGenerator:
         
     def _add_plate_layout_appendix(self) -> None:
         """Adds the plate layout map to the appendix."""
-        plate_layouts = self.manager.get_all_plate_layouts()
+        plate_layouts = self.project_data.get("plate_layout", {})
         if not plate_layouts:
             self.document.add_paragraph("No plate layout data available.", style='Normal')
             return
 
-        p_rows, p_cols = self.manager.get_plate_dimensions()
+        p_rows, p_cols = self.project_data.get("plate_dimensions", (8, 12))
 
-        conc_map = self.manager.get_concentration_map()
+        conc_map = self.project_data.get("concentration_map", {})
         conc_unit = self.project_data.get("concentration_unit", "")
 
         for plate_idx, layout in plate_layouts.items():
@@ -393,8 +396,8 @@ class ReportGenerator:
             return
 
         all_data = []
-        conc_map = self.manager.get_concentration_map()
-        plate_layout = self.manager.get_all_plate_layouts()
+        conc_map = self.project_data.get("concentration_map", {})
+        plate_layout = self.project_data.get("plate_layout", {})
 
         for day, plates in well_data.items():
             for plate_idx, wells in plates.items():
@@ -442,7 +445,7 @@ class ReportGenerator:
             return
 
         malformation_counts: Dict[str, Counter] = {}
-        plate_layout = self.manager.get_all_plate_layouts()
+        plate_layout = self.project_data.get("plate_layout", {})
         all_malformations = set()
 
         for plate_idx, wells in well_data_final_day.items():
@@ -486,7 +489,7 @@ class ReportGenerator:
         
     def _create_photo_appendix(self) -> None:
         """Adds day-separated panels of representative photos to the appendix."""
-        photos_with_metadata = self.manager.get_all_photos_with_metadata()
+        photos_with_metadata = self.project_data.get("photos_with_metadata", [])
         if not photos_with_metadata:
             self.document.add_paragraph("No photographic documentation was attached to this project.", style='Normal')
             return
@@ -497,8 +500,8 @@ class ReportGenerator:
             day = int(meta.get("day", 0))
             photos_by_day.setdefault(day, []).append(meta)
 
-        conc_map = self.manager.get_concentration_map()
-        plate_layouts = self.manager.get_all_plate_layouts()
+        conc_map = self.project_data.get("concentration_map", {})
+        plate_layouts = self.project_data.get("plate_layout", {})
 
         # Generate one panel per day
         for day, day_photos in sorted(photos_by_day.items()):
@@ -630,14 +633,6 @@ class ReportGenerator:
                     
         self._style_table(table)
 
-    def _set_table_font(self, table: Table, font_size: Pt = Pt(FONT_SIZE_TABLE)) -> None:
-        """Applies consistent font settings to all cells in a table."""
-        for row in table.rows:
-            for cell in row.cells:
-                for paragraph in cell.paragraphs:
-                    for run in paragraph.runs:
-                        run.font.name = FONT_NAME
-                        run.font.size = font_size
 
     # Figures #
     def _add_plot_to_document(self, figure: Union[plt.Figure, io.BytesIO], caption: str, width=Inches(6.0)) -> None:
@@ -671,6 +666,104 @@ class ReportGenerator:
         run_caption.font.size = Pt(10)
         run_caption.font.name = FONT_NAME
         
+    def _build_lc50_methods_sentence(self, model_info: dict) -> str:
+        if not model_info:
+            return "LC50 values were estimated by fitting mortality data to a four-parameter logistic (4PL) model using non-linear regression."
+
+        mode = model_info.get("mode", "manual")
+        display = model_info.get("display_name", "4PL (all free)")
+        bottom = model_info.get("bottom")
+        top = model_info.get("top")
+        n_free = model_info.get("n_free", 4)
+
+        if mode == "auto":
+            return (
+                f"To estimate the LC50, two- (2PL), three- (3PL), and four-parameter (4PL) logistic models were fitted to "
+                f"the mortality data. Model selection was based on the corrected Akaike Information Criterion (AICc), which "
+                f"penalizes model complexity relative to the small number of concentration groups typical of FET assays "
+                f"(Burnham & Anderson, 2002). The best-fitting model was {display}."
+            )
+        _ci_note = "Confidence intervals were estimated by case-resampling bootstrap (500 iterations, seed = 15)."
+        if n_free == 4:
+            return f"LC50 values were estimated by fitting mortality data to a four-parameter logistic (4PL) model using non-linear regression. {_ci_note}"
+        if n_free == 2:
+            return (
+                f"LC50 values were estimated by fitting mortality data to a two-parameter logistic (2PL) model using "
+                f"non-linear regression, with the bottom asymptote constrained at {bottom:.1f}% and the top asymptote "
+                f"constrained at {top:.1f}%. {_ci_note}"
+            )
+        if bottom is not None:
+            return (
+                f"LC50 values were estimated by fitting mortality data to a three-parameter logistic (3PL) model using "
+                f"non-linear regression, with the bottom asymptote constrained at {bottom:.1f}%. {_ci_note}"
+            )
+        if top is not None:
+            return (
+                f"LC50 values were estimated by fitting mortality data to a three-parameter logistic (3PL) model using "
+                f"non-linear regression, with the top asymptote constrained at {top:.1f}%. {_ci_note}"
+            )
+        return f"LC50 values were estimated by fitting mortality data to a logistic model using non-linear regression. {_ci_note}"
+
+    def _add_curve_fitting_section(self) -> None:
+        lc50_results = self.analysis_results.get("lc50_results", {})
+        model_info = lc50_results.get("model_info")
+        lc50_val = lc50_results.get("lc50", "")
+        lc50_is_numeric = isinstance(lc50_val, str) and lc50_val[:1].isdigit()
+
+        if not model_info or not lc50_is_numeric:
+            return
+
+        self.document.add_heading("Curve-Fitting Details", level=3)
+
+        bottom = model_info.get("bottom")
+        top = model_info.get("top")
+        fitted = lc50_results.get("_fitted_params")
+
+        details = {
+            "Model": model_info.get("display_name", "—"),
+            "Bottom asymptote": f"{bottom:.1f}% (fixed)" if bottom is not None else f"{fitted[0]:.2f}% (fitted)" if fitted else "fitted",
+            "Top asymptote": f"{top:.1f}% (fixed)" if top is not None else f"{fitted[1]:.2f}% (fitted)" if fitted else "fitted",
+            "Slope": lc50_results.get("slope", "—"),
+            "EC50 / LC50": lc50_val,
+            "Goodness of fit (R²)": lc50_results.get("r_squared", "—"),
+        }
+        self._add_key_value_table("Summary of dose-response curve fitting.", details)
+
+        if model_info.get("mode") == "auto" and model_info.get("aic_table"):
+            self._add_model_comparison_table(model_info["aic_table"])
+
+    def _add_model_comparison_table(self, aic_table: list) -> None:
+        self.table_count += 1
+        p = self.document.add_paragraph(
+            f"Table {self.table_count}. Model comparison by corrected Akaike Information Criterion (AICc). "
+            f"The selected model (ΔAICc = 0.00) is shown in bold."
+        )
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(6)
+
+        table = self.document.add_table(rows=1, cols=4)
+        table.style = "Table Grid"
+        headers = ["Model", "Free parameters (k)", "AICc", "ΔAICc"]
+        for i, h in enumerate(headers):
+            table.cell(0, i).text = h
+
+        best_row_idx = next((i for i, e in enumerate(aic_table) if e.get("delta", 1) == 0.0), None)
+
+        for row_idx, entry in enumerate(aic_table):
+            row_cells = table.add_row().cells
+            row_cells[0].text = entry.get("model", "")
+            row_cells[1].text = str(entry.get("k", ""))
+            aicc_val = entry.get("aicc", float("inf"))
+            row_cells[2].text = f"{aicc_val:.2f}" if aicc_val != float("inf") else "—"
+            row_cells[3].text = f"{entry.get('delta', ''):.2f}"
+            if row_idx == best_row_idx:
+                for cell in row_cells:
+                    for para in cell.paragraphs:
+                        for run in para.runs:
+                            run.bold = True
+
+        self._style_table(table, font_size=Pt(FONT_SIZE_TABLE))
+
     # Photo Panel #
     def _create_photo_panel(self, photos_meta: List[Dict[str, Any]], max_images: int = 12, columns: int = 3
                         ) -> Tuple[Optional[io.BytesIO], List[Dict[str, Any]]]:
@@ -702,7 +795,8 @@ class ReportGenerator:
         # 1. Load, resize, and label all images first
         for i, meta in enumerate(paths_to_process):
             try:
-                img_path = self.manager.get_full_photo_path(meta['path'])
+                _parts = meta['path'].replace("\\", "/").split("/")
+                img_path = os.path.join(self.project_dir, *_parts)
                 
                 # Handle TIFF conversion
                 ext = os.path.splitext(img_path)[1].lower()

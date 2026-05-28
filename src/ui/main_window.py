@@ -109,10 +109,15 @@ class MainWindow(QMainWindow):
         super().keyPressEvent(event)
 
     def closeEvent(self, event: QCloseEvent):
-        """Stop any active load thread and save window geometry before closing."""
+        for i in range(self.pages_widget.count() - 1, 0, -1):
+            widget = self.pages_widget.widget(i)
+            if hasattr(widget, 'shutdown'):
+                widget.shutdown()
         if self.load_thread is not None and self.load_thread.isRunning():
             self.load_thread.quit()
             self.load_thread.wait(3000)
+        if self.project_manager is not None:
+            self.project_manager.close()
         self._save_window_state()
         event.accept()
 
@@ -491,7 +496,11 @@ class MainWindow(QMainWindow):
         self.load_worker.finished.connect(self.load_thread.quit)
         self.load_worker.error.connect(self.load_thread.quit)
         self.load_thread.finished.connect(self.load_thread.deleteLater)
-        self.load_thread.finished.connect(lambda: setattr(self, 'load_thread', None))
+        _finished_thread = self.load_thread
+        self.load_thread.finished.connect(
+            lambda t=_finished_thread: setattr(self, 'load_thread', None)
+            if self.load_thread is t else None
+        )
         self.load_worker.finished.connect(self.load_worker.deleteLater)
         self.load_worker.error.connect(self.load_worker.deleteLater)
 

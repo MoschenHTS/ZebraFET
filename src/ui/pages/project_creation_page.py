@@ -512,7 +512,7 @@ class ProjectCreationPage(QWidget):
                 "replicates": self._safe_get_int(self.replicates_spin, 1),
                 "wells": self.table.cellWidget(row, 3).value(),
                 "per_plate": self.table.cellWidget(row, 4).findChild(QCheckBox).isChecked(),
-                "color": self.table.cellWidget(row, 5).palette().button().color().name()
+                "color": self.table.cellWidget(row, 5).styleSheet().split("background-color: ")[1].split(";")[0]
             }
             concentrations.append(conc_data)
             

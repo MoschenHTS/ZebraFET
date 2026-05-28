@@ -19,6 +19,9 @@ class DayDocumentationWidget(QWidget):
         self.manager = manager
         self.day_to_document = day
         self.suggestions: Dict[str, Any] = {}
+        self._alive = True
+        self._worker = None
+        self._thumb_cache: dict = {}
         self._init_ui()
         self.refresh_suggestions()
 
@@ -83,9 +86,13 @@ class DayDocumentationWidget(QWidget):
         self.splitter.hide()
 
     def refresh_suggestions(self):
-        """Generates suggestions in the thread pool, then populates the tree on the main thread."""
-        worker = TaskManager.instance().submit(self._compute_suggestions)
-        worker.signals.result.connect(self._on_suggestions_computed)
+        if self._worker is not None:
+            try:
+                self._worker.signals.result.disconnect(self._on_suggestions_computed)
+            except (TypeError, RuntimeError):
+                pass
+        self._worker = TaskManager.instance().submit(self._compute_suggestions)
+        self._worker.signals.result.connect(self._on_suggestions_computed)
 
     def _compute_suggestions(self) -> Dict[str, Any]:
         """Pure data computation — runs in the thread pool, no UI calls."""
@@ -146,8 +153,18 @@ class DayDocumentationWidget(QWidget):
 
         return suggestions
 
+    def closeEvent(self, event):
+        self._alive = False
+        if self._worker is not None:
+            try:
+                self._worker.signals.result.disconnect(self._on_suggestions_computed)
+            except (TypeError, RuntimeError):
+                pass
+        super().closeEvent(event)
+
     def _on_suggestions_computed(self, suggestions: Dict[str, Any]):
-        """Called on the main thread when suggestion computation finishes."""
+        if not self._alive:
+            return
         self.suggestions = suggestions
         self._populate_suggestion_tree()
         if not self.suggestions:
@@ -222,9 +239,12 @@ class DayDocumentationWidget(QWidget):
                 thumb_layout = QVBoxLayout(thumb_widget)
                 thumb_layout.setContentsMargins(0, 0, 0, 0)
                 
-                pixmap = QPixmap(path)
-                thumb_pixmap = pixmap.scaled(250, 250, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                
+                if path not in self._thumb_cache:
+                    self._thumb_cache[path] = QPixmap(path).scaled(
+                        150, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                    )
+                thumb_pixmap = self._thumb_cache[path]
+
                 thumb_label = QLabel()
                 thumb_label.setPixmap(thumb_pixmap)
                 thumb_label.setToolTip(f"Path: {path}")
@@ -267,7 +287,8 @@ class DayDocumentationWidget(QWidget):
         self._update_gallery()
 
     def _remove_photo(self, photo_path: str):
-        self.manager.remove_photo_by_path(photo_path) 
+        self._thumb_cache.pop(photo_path, None)
+        self.manager.remove_photo_by_path(photo_path)
         self._populate_suggestion_tree()
         self._update_gallery()
 
@@ -276,21 +297,55 @@ class PhotoAssistantWidget(QWidget):
     def __init__(self, manager: ProjectManager, parent=None):
         super().__init__(parent)
         self.manager = manager
+        self._day_widgets: dict = {}
+        self._loading = False
         self._init_ui()
 
     def _init_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         self.day_tabs = QTabWidget()
+        self.day_tabs.currentChanged.connect(self._ensure_day_loaded)
         main_layout.addWidget(self.day_tabs)
+
+    def _ensure_day_loaded(self, index: int):
+        if index < 0 or self._loading:
+            return
+        day_idx = index + 1
+        if self._day_widgets.get(day_idx) is not None:
+            return
+        self._loading = True
+        try:
+            placeholder = self.day_tabs.widget(index)
+            real_widget = DayDocumentationWidget(self.manager, day_idx)
+            self.day_tabs.removeTab(index)
+            self.day_tabs.insertTab(index, real_widget, f"Day {day_idx}")
+            self._day_widgets[day_idx] = real_widget
+            self.day_tabs.setCurrentIndex(index)
+            if placeholder is not None:
+                placeholder.deleteLater()
+        finally:
+            self._loading = False
 
     def refresh_view(self):
         current_tab = self.day_tabs.currentIndex()
-        self.day_tabs.clear()
-        num_days = self.manager.get_project_info().get("num_days", 1)
-        for day_idx in range(1, num_days + 1):
-            day_widget = DayDocumentationWidget(self.manager, day_idx)
-            self.day_tabs.addTab(day_widget, f"Day {day_idx}")
-        
-        if current_tab != -1 and current_tab < self.day_tabs.count():
-            self.day_tabs.setCurrentIndex(current_tab)
+        self._loading = True
+        try:
+            for widget in self._day_widgets.values():
+                if widget is not None:
+                    widget._alive = False
+            while self.day_tabs.count():
+                w = self.day_tabs.widget(0)
+                self.day_tabs.removeTab(0)
+                if w is not None:
+                    w.deleteLater()
+            self._day_widgets.clear()
+            num_days = self.manager.get_project_info().get("num_days", 1)
+            for day_idx in range(1, num_days + 1):
+                self.day_tabs.addTab(QWidget(), f"Day {day_idx}")
+                self._day_widgets[day_idx] = None
+        finally:
+            self._loading = False
+        target = current_tab if (0 <= current_tab < self.day_tabs.count()) else 0
+        if self.day_tabs.count() > 0:
+            self._ensure_day_loaded(target)

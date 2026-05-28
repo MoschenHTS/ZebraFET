@@ -3,7 +3,7 @@ from typing import Dict, List
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
                              QPushButton, QButtonGroup, QLineEdit, QCheckBox,
                              QLabel, QTextEdit, QScrollArea, QFrame, QMessageBox)
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QKeyEvent
 
 from src.core.project_manager import ProjectManager
@@ -72,7 +72,13 @@ class WellEditorWidget(QWidget):
         self.status_buttons: Dict[str, QPushButton] = {}
         self.sublethal_checkboxes: List[QCheckBox] = []
         self.lethal_checkboxes: List[QCheckBox] = []
-        
+        self._shown_warnings: set = set()
+
+        self._notes_save_timer = QTimer(self)
+        self._notes_save_timer.setSingleShot(True)
+        self._notes_save_timer.setInterval(400)
+        self._notes_save_timer.timeout.connect(self._save_changes)
+
         self._init_ui()
         self.set_active_well(None, None, None)
 
@@ -112,7 +118,7 @@ class WellEditorWidget(QWidget):
         
         self.info_group = QGroupBox("Additional Information"); info_layout = QVBoxLayout(self.info_group)
         self.notes_edit = CustomTextEdit(); self.notes_edit.setPlaceholderText("Enter any notes for this well on this day...")
-        self.notes_edit.textChanged.connect(self._save_changes); self.notes_edit.enter_pressed.connect(self.notes_edit.clearFocus)
+        self.notes_edit.textChanged.connect(self._notes_save_timer.start); self.notes_edit.enter_pressed.connect(self.notes_edit.clearFocus)
         info_layout.addWidget(self.notes_edit); editor_layout.addWidget(self.info_group); editor_layout.addStretch()
 
     def _on_status_toggled(self, status: str, checked: bool) -> None:
@@ -136,6 +142,7 @@ class WellEditorWidget(QWidget):
             day_index (int): The index of the day.
         """
         self.well_id = well_id; self.plate_index = plate_index; self.day_index = day_index
+        self._shown_warnings.clear()
         is_active = self.well_id is not None
         for group in [self.status_group, self.lethal_endpoints_group, self.sublethal_main_layout.parentWidget(), self.info_group]:
             group.setEnabled(is_active)
@@ -250,14 +257,17 @@ class WellEditorWidget(QWidget):
                     f"A hatched embryo cannot revert to an unhatched state. Save anyway?"
                 )
             if impossible_msg:
-                reply = QMessageBox.warning(
-                    self, "Impossible State Transition", impossible_msg,
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No,
-                )
-                if reply == QMessageBox.StandardButton.No:
-                    self.load_well_data()
-                    return
+                warning_key = (self.well_id, self.plate_index, self.day_index, status)
+                if warning_key not in self._shown_warnings:
+                    reply = QMessageBox.warning(
+                        self, "Impossible State Transition", impossible_msg,
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.No,
+                    )
+                    if reply == QMessageBox.StandardButton.No:
+                        self.load_well_data()
+                        return
+                    self._shown_warnings.add(warning_key)
 
         sublethal_conditions = [cb.text() for cb in self.sublethal_checkboxes if cb.isChecked()]
         notes = self.notes_edit.toPlainText()
