@@ -37,6 +37,50 @@ elif sys.platform == 'win32':
 else:
     _icon = 'resources/icons/fishapp_icon.png'
 
+# ── Windows version resource ──────────────────────────────────────────────
+# Stamp the exe with publisher/version metadata (drawn from APP_VERSION, the
+# single source of truth in src/core/constants.py). An unsigned exe carrying
+# proper version info trips fewer AV heuristics. Windows-only; the version file
+# is generated as text so it needs no pefile/pywin32 at spec-parse time.
+_version_file = None
+if sys.platform == 'win32':
+    import re as _re
+    sys.path.insert(0, '.')
+    from src.core.constants import APP_VERSION as _APP_VERSION
+    _nums = [int(_n) for _n in _re.findall(r'\d+', _APP_VERSION)][:4]
+    _nums += [0] * (4 - len(_nums))
+    _vt = tuple(_nums)
+    _version_file = 'ZebraFET_version_info.txt'
+    with open(_version_file, 'w', encoding='utf-8') as _vf:
+        _vf.write(f"""VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers={_vt},
+    prodvers={_vt},
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable('040904B0', [
+        StringStruct('CompanyName', 'Henrique Tamanini S. Moschen'),
+        StringStruct('FileDescription', 'ZebraFET'),
+        StringStruct('FileVersion', '{_APP_VERSION}'),
+        StringStruct('InternalName', 'ZebraFET'),
+        StringStruct('LegalCopyright', 'Copyright (C) Henrique Tamanini S. Moschen. GPL-3.0.'),
+        StringStruct('OriginalFilename', 'ZebraFET.exe'),
+        StringStruct('ProductName', 'ZebraFET'),
+        StringStruct('ProductVersion', '{_APP_VERSION}')
+      ])
+    ]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+""")
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -46,7 +90,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -54,13 +98,14 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=[_icon],
+    version=_version_file,
 )
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='ZebraFET',
 )

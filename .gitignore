@@ -6,6 +6,7 @@ __pycache__/
 # PyInstaller artifacts
 build/
 dist/
+ZebraFET_version_info.txt
 
 # Test cache
 .pytest_cache/
