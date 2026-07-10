@@ -93,6 +93,17 @@ def _migrate_v5_to_v6(conn: sqlite3.Connection) -> None:
         conn.execute(stmt)
 
 
+def _migrate_v6_to_v7(conn: sqlite3.Connection) -> None:
+    """Add auto_filled flag to well_observations to distinguish user-entered from derived rows."""
+    try:
+        conn.execute(
+            "ALTER TABLE well_observations ADD COLUMN auto_filled INTEGER NOT NULL DEFAULT 0"
+        )
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            raise
+
+
 # Map target_version → migration function
 # Add new entries here as the schema evolves.
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
@@ -102,6 +113,7 @@ MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     4: _migrate_v3_to_v4,
     5: _migrate_v4_to_v5,
     6: _migrate_v5_to_v6,
+    7: _migrate_v6_to_v7,
 }
 
 

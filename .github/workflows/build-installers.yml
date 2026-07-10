@@ -146,29 +146,12 @@ jobs:
 
             ## What's New
 
-            ### Statistical Methods
-            **Bootstrap confidence intervals for LC50** — Confidence intervals are now estimated by case-resampling bootstrap (500 iterations, seed = 15) instead of the delta method, providing more robust uncertainty quantification for typical FET experimental designs.
+            - Well statuses now carry forward when you finalize a day rather than on every keystroke, avoiding partially-propagated data while you are still editing.
+            - Days must now be finalized in order, and reopening a day cascades to later days while preserving everything you entered by hand.
+            - Consistent, colorblind-safe colour palette across all charts.
+            - Bug fixes and stability improvements.
 
-            **Multi-model dose-response fitting** — LC50 estimation now fits two-, three-, and four-parameter logistic models (2PL, 3PL, 4PL) and selects the best by corrected AIC (AICc). The selected model and full model comparison table are reported in the Word report. Manual model selection remains available.
-
-            ### Bug Fixes
-            - Fixed text clipping in input fields on Windows due to Segoe UI font metrics
-            - Fixed custom data directory being ignored on some platforms (QSettings format)
-            - Fixed lambda closure causing stale thread reference on project load
-            - Fixed colour extraction for concentration groups using custom-styled buttons
-            - Fixed crash when switching About dialog tabs rapidly
-            - Improved app shutdown: active background workers and DB connections now close cleanly on exit
-
-            ### UI Improvements
-            - Bundled Inter font now registered at startup for consistent cross-platform rendering
-            - Impossible state transition warnings now shown once per well/day instead of on every click
-            - Notes field debounced — DB write triggered 400 ms after typing stops, not on every keystroke
-            - Photo tabs load lazily (only when first visited) instead of all at once on project open
-
-            ### Performance Improvements
-            - Plate layout painting updates individual wells instead of reloading the full plate on each brush stroke
-            - Well status updates query a single well instead of the full day's observations
-            - Thumbnail scaling cached per path — photos no longer re-scaled on every gallery refresh
-            - Antialiasing skipped for unassigned wells during plate paint
+            ### Upgrading
+            Download and run the installer for your platform. Your existing projects and settings are preserved — projects from earlier versions migrate automatically on first open.
           files: installers/**/*
           fail_on_unmatched_files: true

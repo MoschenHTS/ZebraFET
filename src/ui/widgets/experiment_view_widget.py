@@ -98,7 +98,7 @@ class ExperimentViewWidget(QWidget):
     def _update_day_tab_ui(self, day_idx: int, is_complete: bool):
         """Updates the UI of a day tab to reflect its completion status."""
         if day_idx not in self.day_widgets: return
-        
+
         day_info = self.day_widgets[day_idx]
         tab_index = day_info["tab_index"]
         finalize_btn = day_info["finalize_btn"]
@@ -108,36 +108,63 @@ class ExperimentViewWidget(QWidget):
             self.day_tabs.setTabIcon(tab_index, create_icon("check-light.svg"))
             finalize_btn.setText("Reopen Day for Editing")
             finalize_btn.setObjectName("SecondaryButton")
+            finalize_btn.setEnabled(True)
         else:
             self.day_tabs.setTabText(tab_index, f"Day {day_idx}")
             self.day_tabs.setTabIcon(tab_index, QIcon())
             finalize_btn.setText("Finalize Day")
             finalize_btn.setObjectName("PrimaryButton")
-        
+            prior_complete = day_idx == 1 or self._is_day_complete(day_idx - 1)
+            finalize_btn.setEnabled(prior_complete)
+            finalize_btn.setToolTip(
+                "" if prior_complete
+                else f"Finalize Day {day_idx - 1} first."
+            )
+
         finalize_btn.style().unpolish(finalize_btn); finalize_btn.style().polish(finalize_btn)
     
     def _handle_finalize_button_click(self, day: int):
         """Handles both finalizing and reopening a day."""
         is_complete = self._is_day_complete(day)
-        
+
         if is_complete:
-            reply = QMessageBox.question(self, "Confirm Reopening",
-                                         f"Are you sure you want to reopen Day {day} for editing?",
-                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            info = self.manager.get_project_info()
+            num_days = info.get("num_days", 1)
+            completed = self.manager.get_completed_days()
+            later_complete = [d for d in range(day + 1, num_days + 1) if d in completed]
+            cascade_msg = (
+                f"\n\nNote: Days {', '.join(str(d) for d in later_complete)} will also be reopened."
+                if later_complete else ""
+            )
+            reply = QMessageBox.question(
+                self, "Confirm Reopening",
+                f"Are you sure you want to reopen Day {day} for editing?{cascade_msg}",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
             if reply == QMessageBox.Yes:
-                self.manager.set_day_as_incomplete(day)
-                self._update_day_tab_ui(day, is_complete=False)
+                self.manager.reopen_day(day)
+                for d in range(day, num_days + 1):
+                    self._update_day_tab_ui(d, is_complete=False)
+                self.refresh_view()
         else:
+            # Sequential guard: require prior day to be finalized first
+            if day > 1 and not self._is_day_complete(day - 1):
+                QMessageBox.warning(
+                    self, "Sequential Order Required",
+                    f"Day {day - 1} must be finalized before finalizing Day {day}.",
+                )
+                return
+
             inconsistencies = self._check_inconsistencies(day)
             if inconsistencies:
                 QMessageBox.warning(self, "Inconsistent Data Found",
                                     "The following inconsistencies must be corrected before finalizing:\n\n" + "\n".join(inconsistencies))
                 return
-            
-            self.manager.set_day_as_completed(day)
+
+            self.manager.finalize_day(day)
             self._update_day_tab_ui(day, is_complete=True)
             self.refresh_view()
-            
+
             QMessageBox.information(self, "Day Finalized",
                                     f"Day {day} has been finalized.\nYou can now add photos in the 'Photo Documentation' page.")
 

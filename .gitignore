@@ -37,6 +37,7 @@ projects/
 # Internal planning and notes (not for distribution)
 .planning/
 MEMORY.md
+patch_note.md
 
 # Build guide (internal developer reference)
 WINDOWS_BUILD_GUIDE.md

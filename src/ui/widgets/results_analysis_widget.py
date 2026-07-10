@@ -23,53 +23,23 @@ from src.core.project_manager import ProjectManager
 from src.export.report_generator import ReportGenerator
 from src.core.utils import resource_path
 from src.ui.components import SpinningIcon, LoadingOverlay
+from src.ui.plot_style import (apply_style, PLOT_FONT_FAMILY, PUB_COLORS,
+                               style_axes_ticks, get_malformation_colors)
 from src.core.biostatistics import (logistic_function, calculate_lc50_robust,
-                                    select_best_model_lc50, calculate_noec_loec_with_correction)
+                                    select_best_model_lc50, calculate_noec_loec_with_correction,
+                                    impute_absent_as_majority)
 from src.core.constants import (
     STATUS_DEAD_EMBRYO as STATUS_EMBRYO_DEAD,
     STATUS_DEAD_HATCHED as STATUS_HATCHED_DEAD,
     STATUS_LIVE_EMBRYO as STATUS_EMBRYO_ALIVE,
     STATUS_LIVE_HATCHED as STATUS_HATCHED_ALIVE,
+    STATUS_ABSENT,
     DEAD_STATUSES, LIVE_STATUSES, HATCHED_STATUSES,
 )
 
 log = logging.getLogger(__name__)
 
-# Plotting Style — publication-quality (high-impact journal settings)
-try:
-    plt.style.use('seaborn-v0_8-ticks')
-except OSError:
-    try:
-        plt.style.use('seaborn-ticks')
-    except OSError:
-        plt.style.use('default')
-PLOT_PARAMS = {
-    'font.family': 'Times New Roman',
-    'font.size': 11,
-    'axes.labelsize': 11,
-    'axes.titlesize': 12,
-    'axes.titleweight': 'bold',
-    'xtick.labelsize': 9,
-    'ytick.labelsize': 9,
-    'legend.fontsize': 9,
-    'legend.frameon': True,
-    'legend.edgecolor': '0.8',
-    'axes.linewidth': 0.8,
-    'xtick.major.width': 0.8,
-    'ytick.major.width': 0.8,
-    'lines.linewidth': 1.5,
-    'figure.dpi': 300,
-    'savefig.dpi': 300,
-    'savefig.bbox': 'tight',
-}
-# Publication color palette (ColorBrewer-derived, colorblind-safe, print-friendly)
-PUB_COLORS = {
-    'Control':          '#4d4d4d',   # dark grey
-    'Solvent Control':  '#878787',   # mid grey
-    'Substrate':        '#2166ac',   # deep blue
-    'Positive Control': '#d73027',   # red
-}
-plt.rcParams.update(PLOT_PARAMS)
+apply_style()
 
 
 class AnalysisWorker(QObject):
@@ -180,6 +150,8 @@ class AnalysisWorker(QObject):
 
         df = pd.DataFrame(records)
         df['sublethal'] = df['sublethal'].apply(lambda x: x if isinstance(x, list) else [])
+        # Impute absent wells as the majority status of their group before scoring
+        df = impute_absent_as_majority(df, STATUS_ABSENT, group_cols=("day", "conc_id"))
         df['dead'] = df['status'].isin(DEAD_STATUSES).astype(int)
         df['hatched'] = df['status'].isin(HATCHED_STATUSES).astype(int)
         df['malformed'] = df['sublethal'].apply(lambda x: 1 if x else 0)
@@ -253,7 +225,7 @@ class AnalysisWorker(QObject):
         return calculate_noec_loec_with_correction(summary_df)
 
     def _plot_mortality(self, plot_data, lc50_results, conc_unit) -> Figure:
-        fig = Figure(figsize=(3.5, 3.0))  # single-column width (~89 mm)
+        fig = Figure(figsize=(3.5, 3.0), layout='constrained')  # single-column width (~89 mm)
         ax = fig.add_subplot(111)
 
         substrates = [p for p in plot_data if p['type'] == 'Substrate' and p['x'] > 0]
@@ -281,8 +253,9 @@ class AnalysisWorker(QObject):
                     if min_x > 0 and max_x > 0:
                         x_fit = np.logspace(np.log10(min_x * 0.9), np.log10(max_x * 1.1), 200)
                         y_fit = logistic_function(x_fit, *params)
+                        fit_label = lc50_results.get("model_info", {}).get("display_name", "Logistic Fit")
                         ax.plot(x_fit, y_fit, color=PUB_COLORS['Positive Control'],
-                                linestyle='-', label="4PL Logistic Fit")
+                                linestyle='-', label=fit_label)
                 except Exception as e:
                     log.warning(f"Could not plot logistic fit: {e}")
 
@@ -295,15 +268,12 @@ class AnalysisWorker(QObject):
         ax.set_ylim(-5, 105)
         ax.set_xlabel(f"Concentration ({conc_unit})")
         ax.set_ylabel("Mortality (%)")
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
         if any([substrates, control]):
-            ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8)
-        fig.tight_layout(pad=1.0)
+            fig.legend(loc='outside lower center', ncol=3, fontsize=8)
         return fig
 
     def _plot_barchart(self, summary_df, key, title) -> Figure:
-        fig = Figure(figsize=(3.5, 3.0))  # single-column width
+        fig = Figure(figsize=(3.5, 3.0), layout='constrained')  # single-column width
         ax = fig.add_subplot(111)
 
         plot_df = summary_df.copy()
@@ -324,19 +294,16 @@ class AnalysisWorker(QObject):
         legend_handles = [Patch(facecolor=col, edgecolor='black', linewidth=0.5, label=lbl)
                           for lbl, col in seen.items()]
         if legend_handles:
-            ax.legend(handles=legend_handles, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3, fontsize=8)
+            fig.legend(handles=legend_handles, loc='outside lower center', ncol=3, fontsize=8)
 
         ax.set_ylim(0, 105)
         ax.set_ylabel(f"{title} (%)")
         ax.set_xlabel("Treatment Group")
-        ax.tick_params(axis='x', rotation=45)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        fig.tight_layout(pad=1.0)
+        style_axes_ticks(ax, rotate_xticks=True)
         return fig
 
     def _plot_malformation_details(self, summary_df: pd.DataFrame) -> Figure:
-        fig = Figure(figsize=(5.0, 3.5))  # wider to accommodate legend
+        fig = Figure(figsize=(5.0, 3.5), layout='constrained')  # wider to accommodate legend
         ax = fig.add_subplot(111)
 
         malf_data = {
@@ -348,9 +315,6 @@ class AnalysisWorker(QObject):
         if not malf_data:
             ax.text(0.5, 0.5, "No malformations recorded for this day.",
                     ha='center', va='center', transform=ax.transAxes)
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-            fig.tight_layout(pad=1.0)
             return fig
 
         all_malformations = sorted(list(set(m for details in malf_data.values() for m in details.keys())))
@@ -369,10 +333,8 @@ class AnalysisWorker(QObject):
 
         plot_df = pd.DataFrame(df_data, index=group_labels)
 
-        # Use a perceptually-uniform, print-safe discrete palette
-        import matplotlib
         n_malfs = len(all_malformations)
-        colors = [matplotlib.colormaps['tab10'](i / max(n_malfs, 10)) for i in range(n_malfs)]
+        colors = get_malformation_colors(n_malfs)
         plot_df.plot(kind='bar', stacked=True, ax=ax, color=colors, edgecolor='black', linewidth=0.4)
 
         ax.set_ylim(0, 105)
@@ -380,10 +342,7 @@ class AnalysisWorker(QObject):
         ax.set_xlabel("Treatment Group")
         ax.legend(title="Sublethal endpoint", bbox_to_anchor=(1.02, 1), loc='upper left',
                   fontsize=8, title_fontsize=8)
-        ax.tick_params(axis='x', rotation=45)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        fig.tight_layout(pad=1.0)
+        style_axes_ticks(ax, rotate_xticks=True)
         return fig
 
 
@@ -549,7 +508,7 @@ class ResultsAnalysisWidget(QWidget):
         left_side_layout.addWidget(endpoints_group)
 
         self.invalid_test_label = QLabel("")
-        self.invalid_test_label.setFont(QFont(PLOT_PARAMS['font.family'], 12, QFont.Bold))
+        self.invalid_test_label.setFont(QFont(PLOT_FONT_FAMILY, 12, QFont.Bold))
         self.invalid_test_label.setStyleSheet("color: #d9534f;")
         self.invalid_test_label.setAlignment(Qt.AlignCenter)
         self.invalid_test_label.hide()
@@ -699,7 +658,7 @@ class ResultsAnalysisWidget(QWidget):
         else:
             label = QLabel(message or "Plot not available.")
             label.setAlignment(Qt.AlignCenter)
-            label.setFont(QFont(PLOT_PARAMS['font.family'], 12))
+            label.setFont(QFont(PLOT_FONT_FAMILY, 12))
             layout.addWidget(label)
             
     def _export_results(self):
@@ -846,7 +805,13 @@ class ResultsAnalysisWidget(QWidget):
         
         conc_unit_str = f" {conc_unit}"
 
-        lc50_display = lc50_val if isinstance(lc50_val, str) and lc50_val and not lc50_val[0].isdigit() else f"{lc50_val}{conc_unit_str}"
+        if lc50_val and isinstance(lc50_val, str) and lc50_val[0].isdigit():
+            parts = lc50_val.split('(', 1)
+            number_part = parts[0].strip()
+            ci_part = f" ({parts[1]}" if len(parts) > 1 else ""
+            lc50_display = f"{number_part}{conc_unit_str}{ci_part}"
+        else:
+            lc50_display = lc50_val
         noec_display = noec_val if isinstance(noec_val, str) and noec_val and not noec_val[0].isdigit() else f"{noec_val}{conc_unit_str}"
         loec_display = loec_val if isinstance(loec_val, str) and loec_val and not loec_val[0].isdigit() else f"{loec_val}{conc_unit_str}"
             

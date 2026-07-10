@@ -422,7 +422,7 @@ class ProjectManager:
     def get_well_data(self, day: int, plate: int, well_id: str) -> Dict[str, Any]:
         """Return the observation dict for a single well, or {} if not yet recorded."""
         obs = self._conn.execute(
-            "SELECT status, notes FROM well_observations WHERE day=? AND plate_index=? AND well_id=?",
+            "SELECT status, notes, auto_filled FROM well_observations WHERE day=? AND plate_index=? AND well_id=?",
             (day, plate, well_id),
         ).fetchone()
         if not obs:
@@ -449,6 +449,7 @@ class ProjectManager:
         return {
             "status": obs["status"],
             "notes": obs["notes"],
+            "auto_filled": obs["auto_filled"],
             "sublethal_conditions": sublethal,
             "lethal_conditions": lethal,
             "photos": photos,
@@ -463,18 +464,20 @@ class ProjectManager:
         sublethal_conditions: List[str],
         lethal_conditions: List[str],
         notes: str,
+        auto_filled: int = 0,
     ) -> None:
         """Persist a well observation (INSERT OR REPLACE) in a single transaction."""
         def _write():
             self._conn.execute(
                 """
-                INSERT INTO well_observations (day, plate_index, well_id, status, notes)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO well_observations (day, plate_index, well_id, status, notes, auto_filled)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(day, plate_index, well_id) DO UPDATE SET
-                    status = excluded.status,
-                    notes  = excluded.notes
+                    status      = excluded.status,
+                    notes       = excluded.notes,
+                    auto_filled = excluded.auto_filled
                 """,
-                (day, plate_index, well_id, status, notes),
+                (day, plate_index, well_id, status, notes, auto_filled),
             )
             self._conn.execute(
                 "DELETE FROM well_sublethal_conditions WHERE day=? AND plate_index=? AND well_id=?",
@@ -557,17 +560,9 @@ class ProjectManager:
             return None
         from PIL import Image, UnidentifiedImageError
         try:
-            # Ensure the observation row exists so the FK won't fail
-            with self._conn:
-                self._conn.execute(
-                    """
-                    INSERT OR IGNORE INTO well_observations (day, plate_index, well_id, status, notes)
-                    VALUES (?, ?, ?, 'Live Embryo', '')
-                    """,
-                    (day, plate_index, well_id),
-                )
-                if self._conn.execute("SELECT changes()").fetchone()[0]:
-                    log.info(f"Auto-created placeholder observation for {well_id} day={day} plate={plate_index}")
+            # Ensure the observation row exists so the FK won't fail.
+            # Uses carried-forward logic instead of hardcoding Live Embryo.
+            self._ensure_observation_row(day, plate_index, well_id)
 
             day_photo_dir = os.path.join(self.project_dir, PHOTOS_SUBDIR, f"Day_{day}")
             os.makedirs(day_photo_dir, exist_ok=True)
@@ -720,7 +715,7 @@ class ProjectManager:
         Includes statuses, notes, conditions, and photos.
         """
         obs_rows = self._conn.execute(
-            "SELECT plate_index, well_id, status, notes FROM well_observations WHERE day = ?",
+            "SELECT plate_index, well_id, status, notes, auto_filled FROM well_observations WHERE day = ?",
             (day,),
         ).fetchall()
 
@@ -731,6 +726,7 @@ class ProjectManager:
             result.setdefault(plate_str, {})[well_id] = {
                 "status": r["status"],
                 "notes": r["notes"],
+                "auto_filled": r["auto_filled"],
                 "sublethal_conditions": [],
                 "lethal_conditions": [],
                 "photos": [],
@@ -780,8 +776,8 @@ class ProjectManager:
                     self._conn.execute(
                         """
                         INSERT OR IGNORE INTO well_observations
-                            (day, plate_index, well_id, status, notes)
-                        VALUES (?, ?, ?, ?, '')
+                            (day, plate_index, well_id, status, notes, auto_filled)
+                        VALUES (?, ?, ?, ?, '', 1)
                         """,
                         (to_day, plate_idx, well_id, wd["status"]),
                     )
@@ -792,6 +788,10 @@ class ProjectManager:
                 (from_day,),
             ).fetchall()
             for row in prev_lethal:
+                plate_str = str(row["plate_index"])
+                well_status = prev_obs.get(plate_str, {}).get(row["well_id"], {}).get("status", "")
+                if well_status not in _DEAD_STATUSES:
+                    continue
                 self._conn.execute(
                     """
                     INSERT OR IGNORE INTO well_lethal_conditions
@@ -800,6 +800,146 @@ class ProjectManager:
                     """,
                     (to_day, row["plate_index"], row["well_id"], row["condition"]),
                 )
+
+    def _ensure_observation_row(self, day: int, plate_index: int, well_id: str) -> None:
+        """
+        Guarantee a well_observations row exists for (day, plate, well).
+        If not present, insert a carried-forward placeholder (auto_filled=1):
+          - day 1: status = Live Embryo
+          - day N: copy previous day's status + lethal conditions when dead
+        Never overwrites an existing row.
+        """
+        exists = self._conn.execute(
+            "SELECT 1 FROM well_observations WHERE day=? AND plate_index=? AND well_id=?",
+            (day, plate_index, well_id),
+        ).fetchone()
+        if exists:
+            return
+
+        from src.core.constants import STATUS_LIVE_EMBRYO, DEAD_STATUSES
+        if day <= 1:
+            carry_status = STATUS_LIVE_EMBRYO
+            carry_lethal: List[str] = []
+        else:
+            prev = self.get_well_data(day - 1, plate_index, well_id)
+            carry_status = prev.get("status", STATUS_LIVE_EMBRYO)
+            carry_lethal = prev.get("lethal_conditions", []) if carry_status in DEAD_STATUSES else []
+
+        with self._conn:
+            self._conn.execute(
+                """
+                INSERT OR IGNORE INTO well_observations
+                    (day, plate_index, well_id, status, notes, auto_filled)
+                VALUES (?, ?, ?, ?, '', 1)
+                """,
+                (day, plate_index, well_id, carry_status),
+            )
+            for cond in carry_lethal:
+                self._conn.execute(
+                    """
+                    INSERT OR IGNORE INTO well_lethal_conditions
+                        (day, plate_index, well_id, condition)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (day, plate_index, well_id, cond),
+                )
+
+    def materialize_day(self, day: int) -> None:
+        """
+        For every assigned well lacking a row on `day`, insert a carried-forward
+        placeholder (auto_filled=1). Never overwrites existing user-entered rows.
+        Also propagates lethal conditions forward for dead wells, matching the
+        OECD TG 236 requirement that confirmed lethal endpoints remain valid.
+        """
+        from src.core.constants import STATUS_LIVE_EMBRYO, DEAD_STATUSES
+        layouts = self.get_all_plate_layouts()
+        prev_obs = self.get_well_observations_for_day(day - 1) if day > 1 else {}
+
+        def _do():
+            for plate_str, wells in layouts.items():
+                plate_idx = int(plate_str)
+                for well_id in wells:
+                    exists = self._conn.execute(
+                        "SELECT 1 FROM well_observations WHERE day=? AND plate_index=? AND well_id=?",
+                        (day, plate_idx, well_id),
+                    ).fetchone()
+                    if exists:
+                        continue
+
+                    if day <= 1:
+                        carry_status = STATUS_LIVE_EMBRYO
+                        carry_lethal: List[str] = []
+                    else:
+                        prev_well = prev_obs.get(plate_str, {}).get(well_id, {})
+                        carry_status = prev_well.get("status", STATUS_LIVE_EMBRYO)
+                        carry_lethal = (
+                            prev_well.get("lethal_conditions", [])
+                            if carry_status in DEAD_STATUSES
+                            else []
+                        )
+
+                    self._conn.execute(
+                        """
+                        INSERT OR IGNORE INTO well_observations
+                            (day, plate_index, well_id, status, notes, auto_filled)
+                        VALUES (?, ?, ?, ?, '', 1)
+                        """,
+                        (day, plate_idx, well_id, carry_status),
+                    )
+                    for cond in carry_lethal:
+                        self._conn.execute(
+                            """
+                            INSERT OR IGNORE INTO well_lethal_conditions
+                                (day, plate_index, well_id, condition)
+                            VALUES (?, ?, ?, ?)
+                            """,
+                            (day, plate_idx, well_id, cond),
+                        )
+
+        self._transact(_do)
+        log.info(f"Day {day} materialized (untouched wells filled with auto_filled=1).")
+
+    def finalize_day(self, day: int) -> None:
+        """Materialize all untouched wells then mark the day as completed."""
+        self.materialize_day(day)
+        self.set_day_as_completed(day)
+
+    def reopen_day(self, day: int) -> None:
+        """
+        Reopen `day` for editing (cascade): mark day and all later finalized days
+        incomplete. For days strictly after `day`, delete auto_filled=1 rows only
+        (user-entered rows and their associated conditions are preserved).
+        """
+        info = self.get_project_info()
+        num_days = info.get("num_days", 1)
+
+        def _do():
+            self._conn.execute("DELETE FROM completed_days WHERE day >= ?", (day,))
+            for later in range(day + 1, num_days + 1):
+                # Remove auto-filled observations and their orphaned conditions
+                auto_wells = self._conn.execute(
+                    """
+                    SELECT plate_index, well_id FROM well_observations
+                    WHERE day=? AND auto_filled=1
+                    """,
+                    (later,),
+                ).fetchall()
+                for row in auto_wells:
+                    self._conn.execute(
+                        "DELETE FROM well_lethal_conditions WHERE day=? AND plate_index=? AND well_id=?",
+                        (later, row["plate_index"], row["well_id"]),
+                    )
+                    self._conn.execute(
+                        "DELETE FROM well_sublethal_conditions WHERE day=? AND plate_index=? AND well_id=?",
+                        (later, row["plate_index"], row["well_id"]),
+                    )
+                self._conn.execute(
+                    "DELETE FROM well_observations WHERE day=? AND auto_filled=1", (later,)
+                )
+
+        self._transact(_do)
+        self._sync_to_registry()
+        log.info(f"Day {day} reopened; auto-filled rows removed for days > {day}.")
 
     def get_all_well_observations_with_layout(self) -> List[Dict[str, Any]]:
         """

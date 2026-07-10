@@ -142,20 +142,44 @@ def _bootstrap_lc50_ci(
     x_data: np.ndarray,
     y_data: np.ndarray,
     primary_params: tuple,
+    bottom: Optional[float] = None,
+    top: Optional[float] = None,
 ) -> Optional[tuple]:
     """
     Case-resampling bootstrap 95 % CI for LC50.
 
     Resamples concentration groups with replacement 500 times (seed=15).
-    Each resample is fitted using the unconstrained 4PL model with the
-    primary-fit parameters as the starting point (warm start), which allows
-    Levenberg-Marquardt to be used instead of the slower TRF solver.
+    Each resample is refitted using the **same model constraints** (bottom/top)
+    as the primary fit, warm-started from primary_params.
     Returns the 2.5th / 97.5th percentiles of the LC50 distribution, or
     None when fewer than _BOOTSTRAP_MIN_SUCCESS fits converge.
     """
+    # Build constrained fit spec once, matching _fit_model_variant logic
+    _b, _t = bottom, top
+    if _b is not None and _t is not None:
+        def fit_fn(x, slope, ec50): return logistic_function(x, _b, _t, slope, ec50)
+        free_idx = [2, 3]
+        bounds = ([-np.inf, 0.0], [np.inf, np.inf])
+        def unpack(p): return (_b, _t, p[0], p[1])
+    elif _b is not None:
+        def fit_fn(x, max_val, slope, ec50): return logistic_function(x, _b, max_val, slope, ec50)
+        free_idx = [1, 2, 3]
+        bounds = ([0.0, -np.inf, 0.0], [100.0, np.inf, np.inf])
+        def unpack(p): return (_b, p[0], p[1], p[2])
+    elif _t is not None:
+        def fit_fn(x, min_val, slope, ec50): return logistic_function(x, min_val, _t, slope, ec50)
+        free_idx = [0, 2, 3]
+        bounds = ([0.0, -np.inf, 0.0], [100.0, np.inf, np.inf])
+        def unpack(p): return (p[0], _t, p[1], p[2])
+    else:
+        fit_fn = logistic_function
+        free_idx = [0, 1, 2, 3]
+        bounds = ([0.0, 0.0, -np.inf, 0.0], [100.0, 100.0, np.inf, np.inf])
+        def unpack(p): return tuple(float(v) for v in p)
+
+    p0 = [float(primary_params[i]) for i in free_idx]
     rng = np.random.default_rng(_BOOTSTRAP_SEED)
     n = len(x_data)
-    p0 = list(primary_params)
     boot_lc50s: List[float] = []
 
     for _ in range(_BOOTSTRAP_N):
@@ -163,11 +187,11 @@ def _bootstrap_lc50_ci(
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                params, _ = curve_fit(
-                    logistic_function, x_data[idx], y_data[idx],
-                    p0=p0, maxfev=200,
+                params_raw, _ = curve_fit(
+                    fit_fn, x_data[idx], y_data[idx],
+                    p0=p0, bounds=bounds, maxfev=200,
                 )
-            lc50 = float(params[3])
+            lc50 = float(unpack(params_raw)[3])
             if lc50 > 0:
                 boot_lc50s.append(lc50)
         except (RuntimeError, ValueError):
@@ -244,7 +268,7 @@ def calculate_lc50_robust(
         n = len(y_data)
         k = fit["k"]
 
-        ci = _bootstrap_lc50_ci(x_data, y_data, fit["params"])
+        ci = _bootstrap_lc50_ci(x_data, y_data, fit["params"], bottom=bottom, top=top)
         if ci is not None:
             results["lc50"] = (
                 f"{lc50_val:.4f} (Bootstrap 95% CI: {ci[0]:.4f} – {ci[1]:.4f})"
@@ -350,7 +374,7 @@ def select_best_model_lc50(plot_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     n = len(y_data)
     k = best_fit["k"]
 
-    ci = _bootstrap_lc50_ci(x_data, y_data, best_fit["params"])
+    ci = _bootstrap_lc50_ci(x_data, y_data, best_fit["params"], bottom=best_bot, top=best_top)
     lc50_str = (
         f"{lc50_val:.4f} (Bootstrap 95% CI: {ci[0]:.4f} – {ci[1]:.4f})"
         if ci is not None
@@ -369,6 +393,60 @@ def select_best_model_lc50(plot_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         "_fitted_params": list(best_fit["params"]),
         "model_info": _build_model_info("auto", best_bot, best_top, aic_table=aic_table),
     }
+
+
+def impute_absent_as_majority(
+    df: pd.DataFrame,
+    absent_status: str,
+    group_cols: tuple = ("day", "conc_id"),
+    status_col: str = "status",
+) -> pd.DataFrame:
+    """
+    Replace STATUS_ABSENT rows with the majority (mode) status of the other wells
+    in the same concentration group + day, per OECD TG 236 intent.
+
+    Rules:
+    - Only non-absent rows contribute to the majority vote.
+    - A group where ALL wells are absent is left unchanged (no majority available).
+    - Ties favour the status earliest in the priority list: Live Embryo, Live Hatched,
+      Dead Embryo, Dead Hatched (conservative: avoids fabricating mortality).
+    - Absent wells remain in the denominator; only their status classification changes.
+    """
+    _PRIORITY = ["Live Embryo", "Live Hatched", "Dead Embryo", "Dead Hatched"]
+
+    df = df.copy()
+    absent_mask = df[status_col] == absent_status
+    if not absent_mask.any():
+        return df
+
+    def _majority(statuses: pd.Series) -> Optional[str]:
+        counts = statuses.value_counts()
+        if counts.empty:
+            return None
+        max_count = counts.max()
+        tied = counts[counts == max_count].index.tolist()
+        if len(tied) == 1:
+            return tied[0]
+        # Resolve tie by priority order
+        for s in _PRIORITY:
+            if s in tied:
+                return s
+        return tied[0]
+
+    group_majority: Dict[tuple, Optional[str]] = {}
+    for key, grp in df.groupby(list(group_cols)):
+        non_absent = grp.loc[grp[status_col] != absent_status, status_col]
+        group_majority[key] = _majority(non_absent)
+
+    def _impute(row):
+        if row[status_col] != absent_status:
+            return row[status_col]
+        key = tuple(row[c] for c in group_cols)
+        replacement = group_majority.get(key)
+        return replacement if replacement is not None else row[status_col]
+
+    df[status_col] = df.apply(_impute, axis=1)
+    return df
 
 
 def calculate_noec_loec_with_correction(summary_df: pd.DataFrame) -> Dict[str, Any]:

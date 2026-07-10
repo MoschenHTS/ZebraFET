@@ -92,6 +92,7 @@ PROJECT_DB_SCHEMA: list[str] = [
         well_id     TEXT NOT NULL,
         status      TEXT NOT NULL DEFAULT 'Live Embryo',
         notes       TEXT NOT NULL DEFAULT '',
+        auto_filled INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (day, plate_index, well_id)
     )
     """,
@@ -168,7 +169,7 @@ REGISTRY_DB_SCHEMA: list[str] = [
     """,
 ]
 
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 7
 
 
 def initialize_project_db(conn) -> None:

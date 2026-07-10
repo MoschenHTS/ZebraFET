@@ -282,54 +282,11 @@ class WellEditorWidget(QWidget):
             sublethal_conditions=sublethal_conditions,
             lethal_conditions=lethal_conditions,
             notes=notes,
+            auto_filled=0,
         )
-
-        # Propagate irreversible states to subsequent days
-        self._propagate_states(status)
 
         self.data_changed.emit(self.well_id, self.plate_index, self.day_index, status)
         self.interaction_occurred.emit()
-
-    def _propagate_states(self, new_status: str) -> None:
-        """
-        Propagates irreversible states (e.g., dead, hatched) to the same well
-        on all subsequent days of the experiment.
-        """
-        info = self.manager.get_project_info()
-        num_days = info.get("num_days", 1)
-        if self.day_index >= num_days:
-            return
-
-        is_hatched = new_status in self.HATCHED_STATES
-        is_irreversible = new_status in self.IRREVERSIBLE_STATES
-
-        if not is_hatched and not is_irreversible:
-            return
-
-        for day in range(self.day_index + 1, num_days + 1):
-            future_wd = self.manager.get_well_data(day, self.plate_index, self.well_id)
-            current_future_status = future_wd.get("status", self.STATUS_EMBRYO_ALIVE)
-
-            if current_future_status in self.IRREVERSIBLE_STATES:
-                continue
-
-            if is_irreversible:
-                propagated_status = new_status
-            elif is_hatched and current_future_status == self.STATUS_EMBRYO_ALIVE:
-                propagated_status = self.STATUS_HATCHED_ALIVE
-            else:
-                continue
-
-            self.manager.save_well_data(
-                day=day,
-                plate_index=self.plate_index,
-                well_id=self.well_id,
-                status=propagated_status,
-                sublethal_conditions=future_wd.get("sublethal_conditions", []),
-                lethal_conditions=future_wd.get("lethal_conditions", []),
-                notes=future_wd.get("notes", ""),
-            )
-            self.data_changed.emit(self.well_id, self.plate_index, day, propagated_status)
 
 
     def handle_key_press(self, event: QKeyEvent) -> None:
