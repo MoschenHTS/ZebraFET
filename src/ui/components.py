@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QFrame, QVBoxLayout, QHBoxLayout, QLabel, QGridLa
 from PySide6.QtCore import (Qt, Signal, QRect, QPoint, QPointF, QSize,
                           QPropertyAnimation, QEasingCurve, Property, QEvent, QTimer,
                           QParallelAnimationGroup)
-from PySide6.QtGui import (QColor, QPainter, QBrush, QPen, QPixmap, QTransform, QValidator, QDoubleValidator, QIcon)
+from PySide6.QtGui import (QColor, QPainter, QBrush, QPen, QPixmap, QTransform, QValidator, QDoubleValidator, QIcon, QTextDocument)
 from typing import Optional, Dict
 
 from src.core.project_manager import ProjectManager
@@ -218,14 +218,38 @@ class WellWidget(QFrame):
         text_color = "black" if is_light else "white"
         _size = min(self.width(), self.height()) - 4
         _label_side = int(_size * 0.65)
-        font_size = max(6, int(_label_side / 6))
-        
+
         display_status = self.current_status
         if "Absent" in display_status: display_status = "Absent"
-        
-        rich_text = (f"<div style='color:{text_color}; line-height: 120%;'><b style='font-size:{font_size+1}pt;'>{self.well_id}</b><br>"
-                     f"<span style='font-size:{font_size}pt;'>{display_status}</span></div>")
+
+        # Base size in LOGICAL PIXELS. macOS (72 logical DPI) rendered the old `pt`
+        # value 1:1 as px, so reusing the same number as `px` preserves the current
+        # appearance while fixing Windows (96 DPI), where `pt` was scaled up 96/72
+        # and overflowed the 65% box.
+        base_px = max(6, int(_label_side / 6))
+        base_px = self._fit_font_size(self.well_id, display_status, _label_side, base_px)
+
+        rich_text = (f"<div style='color:{text_color}; line-height: 120%;'><b style='font-size:{base_px+1}px;'>{self.well_id}</b><br>"
+                     f"<span style='font-size:{base_px}px;'>{display_status}</span></div>")
         self.info_label.setText(rich_text)
+
+    def _fit_font_size(self, well_id: str, status: str, box_side: int, start_px: int) -> int:
+        """Shrink the base pixel size until the rendered two-line block fits the
+        square label box (height <= box_side). Mirrors the exact HTML painted by
+        the QLabel so the measurement matches on-screen output."""
+        def _html(px: int) -> str:
+            return (f"<div style='line-height: 120%;'><b style='font-size:{px+1}px;'>{well_id}</b><br>"
+                    f"<span style='font-size:{px}px;'>{status}</span></div>")
+        doc = QTextDocument()
+        doc.setDefaultFont(self.font())     # inherits the app-wide Inter family
+        doc.setTextWidth(max(1, box_side))  # force word-wrap at the box width
+        px = start_px
+        while px > 6:
+            doc.setHtml(_html(px))
+            if doc.size().height() <= box_side:
+                break
+            px -= 1
+        return px
     
     def update_well_details(self, well_data: Dict):
         """
