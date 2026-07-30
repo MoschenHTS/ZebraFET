@@ -39,8 +39,23 @@ class ProjectRegistry:
         return [dict(r) for r in rows]
 
     def upsert_project(self, meta: dict[str, Any]) -> None:
-        """Insert or replace a project row (keyed on project_name)."""
+        """Insert or replace a project row.
+
+        A project's name is editable in Project Settings while its db_path is
+        fixed, so the two identify the same project only until someone renames
+        it. The ON CONFLICT clause below resolves a repeat name, but a rename
+        arrives as a new name against an already-registered db_path, which the
+        UNIQUE index on db_path rejects. Dropping any row that holds this
+        db_path under a different name first lets the rename land as an update
+        rather than raising — the previous behaviour left the hub showing the
+        old name and, because every later sync hit the same violation, froze
+        that project's progress count for good.
+        """
         with self._conn:
+            self._conn.execute(
+                "DELETE FROM projects WHERE db_path = :db_path AND project_name <> :project_name",
+                meta,
+            )
             self._conn.execute(
                 """
                 INSERT INTO projects

@@ -5,65 +5,21 @@ import markdown
 from typing import Optional
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTabWidget, QWidget, QLabel,
-                             QTextEdit, QScrollArea, QGroupBox, QPushButton,
-                             QHBoxLayout, QMessageBox)
+                             QTextEdit, QScrollArea, QPushButton,
+                             QHBoxLayout, QMessageBox, QDialogButtonBox)
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QFont, QDesktopServices
 
+from src.core.constants import APP_VERSION
 from src.core.utils import resource_path
+from src.ui.components import CollapsibleSection
+from src.ui.typography import scaled_pt
 
 log = logging.getLogger(__name__)
 
-class ClickableCollapsibleBox(QGroupBox):
-    """
-    A QGroupBox that acts as a collapsible box, toggled by clicking its title.
-    """
-    def __init__(self, title: str = "", parent: Optional[QWidget] = None):
-        # Initialize the QGroupBox without a title initially to manage it manually.
-        super().__init__("", parent)
-        self.setCheckable(True)
-        self.setChecked(False)
-        self.title_text = title
-
-        # Set the initial title with the correct collapsed indicator.
-        super().setTitle(f"► {self.title_text}")
-
-        # The content widget will be hidden/shown
-        self.content_widget = QWidget()
-        self.content_layout = QVBoxLayout(self.content_widget)
-        
-        main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(0)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(self.content_widget)
-
-        self.content_widget.setVisible(False)
-        self.toggled.connect(self.toggle_content)
-
-    def setContentLayout(self, layout_or_widget) -> None:
-        # Clear existing layout
-        while self.content_layout.count():
-            item = self.content_layout.takeAt(0)
-            if item.widget():
-                item.widget().setParent(None)
-
-        if isinstance(layout_or_widget, QWidget):
-            self.content_layout.addWidget(layout_or_widget)
-        elif isinstance(layout_or_widget, QVBoxLayout):
-            while layout_or_widget.count():
-                item = layout_or_widget.takeAt(0)
-                if item.widget():
-                    self.content_layout.addWidget(item.widget())
-                elif item.layout():
-                     self.content_layout.addLayout(item.layout())
-
-    def toggle_content(self, checked: bool) -> None:
-        """Shows or hides the content and updates the title arrow."""
-        self.content_widget.setVisible(checked)
-        arrow_char = "▼" if checked else "►"
-        super().setTitle(f"{arrow_char} {self.title_text}")
-
-
+#: Published identifiers shown in the About tab.
+ZENODO_DOI = "10.5281/zenodo.20183712"
+REPOSITORY_URL = "https://github.com/MoschenHTS/ZebraFET"
 
 class AboutDialog(QDialog):
     """
@@ -89,10 +45,25 @@ class AboutDialog(QDialog):
         self.tab_widget.addTab(QWidget(), "OECD TG 236")
         self.tab_widget.addTab(self._create_licenses_tab(), "Licenses")
         self.tab_widget.addTab(self._create_credits_tab(), "Credits")
-        self.tab_widget.addTab(self._create_researcher_info_tab(), "Researcher Info")
 
         layout.addWidget(self.tab_widget)
+
+        # Without a button bar this dialog could only be dismissed by the window
+        # close box or an undiscoverable Escape.
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
         self._on_tab_changed(0)
+
+    def show_tab(self, tab_name: str) -> None:
+        """Select a tab by its label; unknown names leave the selection alone."""
+        for index in range(self.tab_widget.count()):
+            if self.tab_widget.tabText(index) == tab_name:
+                self.tab_widget.setCurrentIndex(index)
+                return
+        log.warning(f"About dialog has no tab named {tab_name!r}")
 
     def _on_tab_changed(self, index: int) -> None:
         tab_content_widget = self.tab_widget.widget(index)
@@ -154,42 +125,38 @@ class AboutDialog(QDialog):
     def _create_about_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.setContentsMargins(20, 20, 20, 20); layout.setSpacing(15)
-        title_font = QFont(); title_font.setPointSize(18); title_font.setBold(True)
-        author_font = QFont(); author_font.setPointSize(12); author_font.setItalic(True)
-        body_font = QFont(); body_font.setPointSize(11)
-        title = QLabel("ZebraFET 2.0 — A Software for Standardization and Execution of the Fish Embryo Acute Toxicity Test (OECD TG 236)")
-        title.setFont(title_font); title.setWordWrap(True)
-        author = QLabel("Author: Henrique Tamanini S. Moschen"); author.setFont(author_font); author.setWordWrap(True)
-        body_text = """
-        <p>The Fish Embryo Acute Toxicity (FET) test, standardized under OECD TG 236, is a cornerstone method in environmental and regulatory toxicology. However, its predominantly manual execution introduces variability, transcription errors, and inefficiencies that compromise reproducibility and data traceability.</p>
-        <p><b>ZebraFET</b> was developed in Python (PySide6) to address these limitations by structuring the FET workflow into integrated modules:</p>
-        <ul>
-            <li><b>Experimental planning:</b> plate layout design and dilution series calculation.</li>
-            <li><b>Guided execution:</b> timed monitoring and systematic recording of lethality endpoints.</li>
-            <li><b>Automated analysis:</b> mortality curves, dose-response visualization, and exportable results.</li>
-        </ul>
-        <p>The software aims to <b>enhance reproducibility, traceability, and efficiency</b>, providing a robust digital protocol for academic, industrial, and regulatory laboratories.</p>
-        """
-        body = QLabel(body_text)
-        body.setFont(body_font); body.setWordWrap(True); body.setTextFormat(Qt.RichText); body.setOpenExternalLinks(True)
-        layout.addWidget(title); layout.addWidget(author); layout.addWidget(body); layout.addStretch()
-        return widget
+        layout.setContentsMargins(20, 20, 20, 20); layout.setSpacing(12)
 
-    def _create_researcher_info_tab(self) -> QWidget:
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(20, 20, 20, 20); layout.setSpacing(10)
-        main_group = QGroupBox("Researcher Identity"); group_layout = QVBoxLayout(main_group)
-        def create_info_label(title: str, value: str, link: Optional[str] = None) -> QLabel:
-            text = f'<b>{title}:</b> <a href="{link}">{value}</a>' if link else f'<b>{title}:</b> {value}'
-            label = QLabel(text); label.setTextFormat(Qt.RichText); label.setOpenExternalLinks(True)
-            return label
-        group_layout.addWidget(create_info_label("Full Name", "Henrique Tamanini S. Moschen"))
-        group_layout.addWidget(create_info_label("E-mail", "henriquetamanini@icloud.com", "mailto:henriquetamanini@icloud.com"))
-        group_layout.addWidget(create_info_label("ORCID", "0000-0002-1920-8915", "https://orcid.org/0000-0002-1920-8915"))
-        group_layout.addWidget(create_info_label("Lattes", "0806842036446591", "http://lattes.cnpq.br/0806842036446591"))
-        layout.addWidget(main_group); layout.addStretch()
+        title_font = QFont(); title_font.setPointSizeF(scaled_pt(18)); title_font.setBold(True)
+        subtitle_font = QFont(); subtitle_font.setPointSizeF(scaled_pt(11)); subtitle_font.setItalic(True)
+
+        title = QLabel(f"ZebraFET {APP_VERSION}")
+        title.setFont(title_font)
+
+        subtitle = QLabel(
+            "Fish Embryo Acute Toxicity (FET) test assistant implementing OECD TG 236."
+        )
+        subtitle.setFont(subtitle_font); subtitle.setWordWrap(True)
+
+        body = QLabel(
+            "<p>ZebraFET covers the FET workflow in one application: concentration planning "
+            "and plate layout, daily scoring of the OECD TG 236 lethal and sublethal "
+            "endpoints, LC50 estimation with NOEC and LOEC determination and the sublethal "
+            "endpoint battery, and export to a Word report or CSV tables.</p>"
+            "<p>The statistics module carries no interface dependencies and can be imported "
+            "directly from scripts and notebooks.</p>"
+            "<table cellpadding='3'>"
+            "<tr><td><b>Guideline</b></td><td>OECD TG 236 (2025 edition)</td></tr>"
+            "<tr><td><b>License</b></td><td>GNU General Public License v3.0</td></tr>"
+            f"<tr><td><b>DOI</b></td><td><a href='https://doi.org/{ZENODO_DOI}'>{ZENODO_DOI}</a></td></tr>"
+            f"<tr><td><b>Source</b></td><td><a href='{REPOSITORY_URL}'>{REPOSITORY_URL}</a></td></tr>"
+            "</table>"
+            "<p>Authors, collaborators and acknowledgements are listed under Credits.</p>"
+        )
+        body.setWordWrap(True); body.setTextFormat(Qt.RichText); body.setOpenExternalLinks(True)
+
+        layout.addWidget(title); layout.addWidget(subtitle); layout.addWidget(body)
+        layout.addStretch()
         return widget
 
     def _create_licenses_tab(self) -> QWidget:
@@ -198,7 +165,7 @@ class AboutDialog(QDialog):
         
         eula_path = resource_path("resources/docs/Licenses/EULA_zebraFET.md")
         eula_content_md = self._read_file_content(eula_path, "ZebraFET End User License Agreement not found.")
-        eula_box = ClickableCollapsibleBox("ZebraFET License")
+        eula_box = CollapsibleSection("ZebraFET License")
         eula_text = QTextEdit()
         eula_text.setReadOnly(True)
         if not eula_content_md.startswith("<b>Error:"):
@@ -209,7 +176,7 @@ class AboutDialog(QDialog):
         eula_box.setContentLayout(eula_text)
         layout.addWidget(eula_box)
 
-        third_party_box = ClickableCollapsibleBox("Third-party Licenses")
+        third_party_box = CollapsibleSection("Third-party Licenses")
         third_party_layout = QVBoxLayout()
         licenses_path = resource_path("resources/docs/Licenses/")
         if not os.path.isdir(licenses_path):
@@ -223,7 +190,7 @@ class AboutDialog(QDialog):
             for file_path in sorted(license_files):
                 license_name = os.path.basename(file_path).replace(".txt", "").replace("_", " ")
                 content = self._read_file_content(file_path, f"Could not read {license_name} license.")
-                lib_box = ClickableCollapsibleBox(license_name)
+                lib_box = CollapsibleSection(license_name)
                 text_edit = QTextEdit(content)
                 text_edit.setReadOnly(True)
                 lib_box.setContentLayout(text_edit)

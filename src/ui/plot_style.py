@@ -2,8 +2,22 @@ import matplotlib.pyplot as plt
 
 PLOT_FONT_FAMILY = 'Times New Roman'
 
+# Times New Roman ships with Windows and macOS but not with most Linux
+# distributions, where matplotlib would fall back to its own sans-serif default
+# and emit a warning per figure — so the same project produced differently
+# typeset figures depending on where it was analysed. The metric-compatible
+# substitutes come first, then a serif that is always present.
+PLOT_FONT_STACK = [
+    PLOT_FONT_FAMILY,
+    'Liberation Serif',
+    'Nimbus Roman',
+    'Tinos',
+    'DejaVu Serif',
+]
+
 PLOT_PARAMS = {
-    'font.family': PLOT_FONT_FAMILY,
+    'font.family': 'serif',
+    'font.serif': PLOT_FONT_STACK,
     'font.size': 11,
     'axes.labelsize': 11,
     'axes.titlesize': 12,
@@ -18,8 +32,8 @@ PLOT_PARAMS = {
     'ytick.major.width': 0.8,
     'lines.linewidth': 1.2,
     # 'figure.dpi' intentionally omitted -> matplotlib default (~100), screen-appropriate.
-    # Export stays print-quality via the explicit dpi=300 passed at savefig() call sites.
-    'savefig.dpi': 300,
+    # Export stays print-quality via the explicit dpi=600 passed at savefig() call sites.
+    'savefig.dpi': 600,
     'savefig.bbox': 'tight',
     'axes.spines.top': False,
     'axes.spines.right': False,

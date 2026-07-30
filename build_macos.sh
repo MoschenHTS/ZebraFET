@@ -16,8 +16,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Qt 6.11, which PySide6 6.11 binds, requires macOS 13 or later. Declared so the
+# bundle records the floor it was actually built against instead of inheriting
+# whatever SDK the build machine happens to carry.
+#
+# The artifact is Apple Silicon only: the CI runner is arm64 and ZebraFET.spec
+# leaves target_arch unset, so no Intel slice is produced. GitHub's Intel macOS
+# runners are paid tiers, so a universal build is out of reach here; Intel users
+# run from source.
+export MACOSX_DEPLOYMENT_TARGET=13.0
+
 APP_NAME="ZebraFET"
-VERSION="2.1.2"  # Keep in sync with src/core/constants.py APP_VERSION
+VERSION="2.2.0"  # Keep in sync with src/core/constants.py APP_VERSION
 BUNDLE_ID="com.zebralab.zebrafet"
 DIST_DIR="dist"
 BUILD_DIR="build"

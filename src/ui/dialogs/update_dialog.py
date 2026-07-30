@@ -1,7 +1,8 @@
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-                               QPushButton, QTextBrowser, QWidget)
+                               QPushButton, QTextBrowser, QWidget,
+                               QDialogButtonBox)
 
 from src.core.update_checker import UpdateInfo
 
@@ -56,28 +57,26 @@ class UpdateAvailableDialog(QDialog):
 
         layout.addStretch()
 
-        button_row = QHBoxLayout()
-        button_row.setSpacing(8)
+        # A QDialogButtonBox so the platform decides where each button sits:
+        # "Skip" is a destructive-ish choice and belongs on the far side of the
+        # affirmative one, which the roles handle without hand-placed stretches.
+        button_box = QDialogButtonBox()
 
-        btn_skip = QPushButton("Skip This Update")
-        btn_skip.setToolTip("Do not notify me about this version again.")
-        btn_skip.clicked.connect(self._on_skip)
-
-        btn_later = QPushButton("Not Now")
-        btn_later.setToolTip("Remind me on next launch.")
-        btn_later.clicked.connect(self._on_later)
-
-        btn_update = QPushButton("Update Now")
+        btn_update = button_box.addButton("Update Now", QDialogButtonBox.AcceptRole)
         btn_update.setToolTip("Open the download page in your browser.")
+        btn_update.setObjectName("PrimaryButton")
         btn_update.setDefault(True)
         btn_update.clicked.connect(self._on_update)
 
-        button_row.addWidget(btn_skip)
-        button_row.addStretch()
-        button_row.addWidget(btn_later)
-        button_row.addWidget(btn_update)
+        btn_later = button_box.addButton("Not Now", QDialogButtonBox.RejectRole)
+        btn_later.setToolTip("Remind me on next launch.")
+        btn_later.clicked.connect(self._on_later)
 
-        layout.addLayout(button_row)
+        btn_skip = button_box.addButton("Skip This Update", QDialogButtonBox.DestructiveRole)
+        btn_skip.setToolTip("Do not notify me about this version again.")
+        btn_skip.clicked.connect(self._on_skip)
+
+        layout.addWidget(button_box)
 
     def _on_skip(self) -> None:
         self.choice = self.SKIP

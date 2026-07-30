@@ -5,13 +5,14 @@ import traceback
 from logging.handlers import RotatingFileHandler
 from PySide6.QtWidgets import (QApplication, QMessageBox, QWidget, QVBoxLayout,
                              QHBoxLayout, QLabel, QGraphicsOpacityEffect)
-from PySide6.QtCore import (QSettings, Qt, QPropertyAnimation, QEasingCurve, QTimer,
+from PySide6.QtCore import (Qt, QPropertyAnimation, QEasingCurve, QTimer,
                              QObject, Signal, QStandardPaths)
 from PySide6.QtGui import QIcon, QPixmap, QFileOpenEvent, QFontDatabase
 
 from src.ui.main_window import MainWindow
 from src.ui.theme_manager import ThemeManager
-from src.core.utils import resource_path
+from src.core.utils import resource_path, app_settings, set_icon_theme
+from src.ui.typography import DESIGN_BASE_PT
 from src.core.constants import APP_VERSION
 
 log = logging.getLogger(__name__)
@@ -132,7 +133,8 @@ class _ExceptionRelay(QObject):
         try:
             QMessageBox.critical(
                 None, "Unexpected Error",
-                f"An unexpected error occurred. Please check ZebraFET.log.\n\n{msg[:800]}"
+                "An unexpected error occurred and has been written to zebrafet.log.\n\n"
+                "Help > Open Log Folder will reveal the file."
             )
         finally:
             self._in_dialog = False
@@ -154,8 +156,9 @@ class ZebraFETApp(QApplication):
 
     def event(self, event):
         if isinstance(event, QFileOpenEvent):
+            from src.core.project_exporter import is_importable_archive
             path = event.file()
-            if path.endswith(('.zfet', '.zebravet')) and os.path.isfile(path):
+            if is_importable_archive(path) and os.path.isfile(path):
                 if self._window is not None:
                     self._window.open_archive(path)
                 else:
@@ -210,7 +213,7 @@ def main():
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
     app = ZebraFETApp(sys.argv)
-    app.setApplicationName("ZebraFET Hub")
+    app.setApplicationName("ZebraFET")
     app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName("ZebraFET")
 
@@ -224,6 +227,16 @@ def main():
         _fid = QFontDatabase.addApplicationFont(resource_path(_font))
         if _fid == -1:
             log.warning(f"Failed to load bundled font: {_font}")
+
+    # Take the family from the bundled font but the size from the system, so the
+    # OS text-size setting reaches the interface. The QSS used to pin 11pt on
+    # QWidget, which overrode it everywhere. The floor is that same 11pt, so the
+    # default appearance is unchanged and only a larger system setting moves it.
+    _base_font = app.font()
+    _base_font.setFamily("Inter")
+    if _base_font.pointSizeF() > 0:
+        _base_font.setPointSizeF(max(_base_font.pointSizeF(), DESIGN_BASE_PT))
+    app.setFont(_base_font)
 
     # Add file handler now that QStandardPaths is available
     _app_data = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
@@ -258,12 +271,15 @@ def main():
     except Exception as e:
         log.error(f"Could not create or show splash screen: {e}")
 
-    settings = QSettings(
-        QSettings.Format.IniFormat,
-        QSettings.Scope.UserScope,
-        app.organizationName(),
-        app.applicationName()
-    )
+    settings = app_settings()
+
+    # The theme is applied before anything is shown: the setup wizard is the
+    # first window a new user sees, and it was being drawn unstyled.
+    theme_manager = ThemeManager(app, settings)
+    theme_manager.apply_last_theme()
+    # Icons set from Python pick their variant from here, so the theme has to be
+    # known before the first window is drawn.
+    set_icon_theme(theme_manager.current_theme)
 
     # First-run setup wizard — shown before the main window on a fresh install
     if not settings.value("setup/completed", False, type=bool):
@@ -278,12 +294,8 @@ def main():
             splash.show()
             app.processEvents()
 
-    theme_manager = ThemeManager(app, settings)
-    
     window = MainWindow(settings, theme_manager)
     app.set_window(window)
-
-    theme_manager.apply_last_theme()
 
     QTimer.singleShot(500, window.show)
 
@@ -292,8 +304,9 @@ def main():
 
     startup_file = app.consume_pending_file()
     if not startup_file and len(sys.argv) > 1:
+        from src.core.project_exporter import is_importable_archive
         candidate = sys.argv[1]
-        if candidate.endswith(('.zfet', '.zebravet')) and os.path.isfile(candidate):
+        if is_importable_archive(candidate) and os.path.isfile(candidate):
             startup_file = candidate
     if startup_file:
         QTimer.singleShot(900, lambda: window.open_archive(startup_file))

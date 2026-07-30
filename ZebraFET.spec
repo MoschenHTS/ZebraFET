@@ -2,6 +2,9 @@
 import sys
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
+sys.path.insert(0, '.')
+from src.core.constants import APP_VERSION
+
 datas = [
     ('resources', 'resources'),   # icons, fonts, themes, docs — all under resources/
     ('src',       'src'),         # Python source (needed for dynamic imports)
@@ -45,9 +48,7 @@ else:
 _version_file = None
 if sys.platform == 'win32':
     import re as _re
-    sys.path.insert(0, '.')
-    from src.core.constants import APP_VERSION as _APP_VERSION
-    _nums = [int(_n) for _n in _re.findall(r'\d+', _APP_VERSION)][:4]
+    _nums = [int(_n) for _n in _re.findall(r'\d+', APP_VERSION)][:4]
     _nums += [0] * (4 - len(_nums))
     _vt = tuple(_nums)
     _version_file = 'ZebraFET_version_info.txt'
@@ -117,6 +118,13 @@ if sys.platform == 'darwin':
         icon='resources/icons/fishapp_icon.icns',
         bundle_identifier='com.zebralab.zebrafet',
         info_plist={
+            # Names the macOS application menu and the Finder entry. Without
+            # these the menu title falls back to the launching executable.
+            'CFBundleName': 'ZebraFET',
+            'CFBundleDisplayName': 'ZebraFET',
+            'CFBundleShortVersionString': APP_VERSION,
+            'CFBundleVersion': APP_VERSION,
+            'NSHighResolutionCapable': True,
             'CFBundleDocumentTypes': [
                 {
                     'CFBundleTypeExtensions': ['zfet'],

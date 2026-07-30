@@ -72,7 +72,7 @@ class TestEndpointLists:
             "Yolk sac oedema",
             "Pericardial oedema",
             "Spinal curvature (scoliosis)",
-            "Tail / fin malformation",
+            "Tail malformation",
             "Head / jaw malformation",
             "Fin malformation or absence",
             "Pigmentation abnormalities",

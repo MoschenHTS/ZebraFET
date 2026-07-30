@@ -15,6 +15,7 @@ from PySide6.QtGui import QFont, QPixmap, QDragEnterEvent, QDropEvent, QResizeEv
 
 from src.core.utils import resource_path, get_registry_db_path, get_projects_base_dir
 from src.database.registry import ProjectRegistry
+from src.ui.typography import scaled_pt
 
 log = logging.getLogger(__name__)
 
@@ -56,11 +57,10 @@ class ActionCard(ClickableCard):
         icon_label.setAlignment(Qt.AlignCenter)
 
         text_label = QLabel(text)
-        font = self.font(); font.setPointSize(14); font.setBold(True)
+        font = self.font(); font.setPointSizeF(scaled_pt(14)); font.setBold(True)
         text_label.setFont(font)
         text_label.setAlignment(Qt.AlignCenter)
 
-        self.setStyleSheet("QLabel { background-color: transparent; }")
         layout.addWidget(icon_label)
         layout.addWidget(text_label)
 
@@ -106,11 +106,11 @@ class ProjectCard(QFrame):
         layout.setSpacing(5)
 
         name_label = QLabel(data["project_name"])
-        font_name = self.font(); font_name.setPointSize(16); font_name.setBold(True)
+        font_name = self.font(); font_name.setPointSizeF(scaled_pt(16)); font_name.setBold(True)
         name_label.setFont(font_name)
         name_label.setWordWrap(True)
 
-        font_info = self.font(); font_info.setPointSize(10)
+        font_info = self.font(); font_info.setPointSizeF(scaled_pt(10))
         researcher_label = QLabel(f"Researcher: {data.get('main_researcher') or 'N/A'}")
         researcher_label.setFont(font_info)
         researcher_label.setWordWrap(True)
@@ -132,12 +132,9 @@ class ProjectCard(QFrame):
             last_mod_str = "Unknown"
 
         date_label = QLabel(f"Last updated: {last_mod_str}")
-        font_date = self.font(); font_date.setPointSize(9); font_date.setItalic(True)
+        font_date = self.font(); font_date.setPointSizeF(scaled_pt(9)); font_date.setItalic(True)
         date_label.setFont(font_date)
         date_label.setAlignment(Qt.AlignRight)
-
-        for label in [name_label, researcher_label, substance_label, progress_label, date_label]:
-            label.setStyleSheet("background-color: transparent;")
 
         layout.addWidget(name_label)
         layout.addWidget(researcher_label)
@@ -188,8 +185,8 @@ class ProjectHubPage(QWidget):
         main_layout.setContentsMargins(15, 15, 15, 15)
         main_layout.setSpacing(15)
 
-        title = QLabel("Projects Hub")
-        font_title = self.font(); font_title.setPointSize(20); font_title.setBold(True)
+        title = QLabel("ZebraFET")
+        font_title = self.font(); font_title.setPointSizeF(scaled_pt(20)); font_title.setBold(True)
         title.setFont(font_title)
         title.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title)
@@ -226,7 +223,7 @@ class ProjectHubPage(QWidget):
             log.warning(f"Overlay icon not found at path: {icon_path}")
 
         text_label = QLabel("Drop a project folder or .zfet archive here")
-        font_overlay = self.font(); font_overlay.setPointSize(20); font_overlay.setBold(True)
+        font_overlay = self.font(); font_overlay.setPointSizeF(scaled_pt(20)); font_overlay.setBold(True)
         text_label.setFont(font_overlay)
         overlay_layout.addWidget(icon_label)
         overlay_layout.addWidget(text_label)
@@ -252,20 +249,22 @@ class ProjectHubPage(QWidget):
     # ------------------------------------------------------------------
 
     def dragEnterEvent(self, event: QDragEnterEvent):
+        from src.core.project_exporter import is_importable_archive
         mime = event.mimeData()
         if mime.hasUrls() and len(mime.urls()) == 1:
             path = mime.urls()[0].toLocalFile()
-            if os.path.isdir(path) or path.endswith((".zfet", ".zebravet")):
+            if os.path.isdir(path) or is_importable_archive(path):
                 event.acceptProposedAction()
                 self.blur_effect.setEnabled(True)
                 self.drop_overlay.show()
                 self.drop_overlay.raise_()
 
     def dragMoveEvent(self, event):
+        from src.core.project_exporter import is_importable_archive
         mime = event.mimeData()
         if mime.hasUrls() and len(mime.urls()) == 1:
             path = mime.urls()[0].toLocalFile()
-            if os.path.isdir(path) or path.endswith((".zfet", ".zebravet")):
+            if os.path.isdir(path) or is_importable_archive(path):
                 event.acceptProposedAction()
 
     def dragLeaveEvent(self, event):
@@ -273,10 +272,11 @@ class ProjectHubPage(QWidget):
         self.drop_overlay.hide()
 
     def dropEvent(self, event: QDropEvent):
+        from src.core.project_exporter import is_importable_archive
         self.blur_effect.setEnabled(False)
         self.drop_overlay.hide()
         path = event.mimeData().urls()[0].toLocalFile()
-        if path.endswith((".zfet", ".zebravet")):
+        if is_importable_archive(path):
             self._import_project(path)
         else:
             self._open_dir_path(path)
@@ -368,7 +368,7 @@ class ProjectHubPage(QWidget):
             archive_path, _ = QFileDialog.getOpenFileName(
                 self, "Import Project Archive",
                 os.path.expanduser("~"),
-                "ZebraFET Archives (*.zfet *.zebravet)"
+                "ZebraFET Archives (*.zfet *.zebravet *.zip);;All Files (*)"
             )
         if not archive_path:
             return

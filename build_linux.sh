@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 APP_NAME="ZebraFET"
-VERSION="2.1.2"  # Keep in sync with src/core/constants.py APP_VERSION
+VERSION="2.2.0"  # Keep in sync with src/core/constants.py APP_VERSION
 DIST_DIR="dist"
 BUILD_DIR="build"
 APPDIR="${BUILD_DIR}/AppDir"

@@ -19,6 +19,25 @@ import zipfile
 
 log = logging.getLogger(__name__)
 
+# Extensions accepted on import. Beyond the native .zfet / legacy .zebravet, a
+# plain .zip is accepted because email providers and cloud storage frequently
+# re-wrap the archive on download — they detect the ZIP payload and append
+# ".zip", so a shared "MyProject.zfet" arrives at the coworker as
+# "MyProject.zfet.zip" (which ends in ".zip"). import_project() validates the
+# contents regardless of extension (a root-level .db is required and unsafe
+# paths are rejected), so widening the accepted extensions here is safe.
+IMPORT_EXTENSIONS = (".zfet", ".zebravet", ".zip")
+
+
+def is_importable_archive(path: str) -> bool:
+    """True if *path*'s extension is one we accept for project import.
+
+    Case-insensitive. Accepts .zfet, legacy .zebravet, and any .zip (which also
+    covers the ".zfet.zip" / ".zebravet.zip" names produced when mail/cloud
+    services re-wrap the archive).
+    """
+    return path.lower().endswith(IMPORT_EXTENSIONS)
+
 
 def export_project(manager, output_path: str) -> None:
     """
@@ -35,7 +54,7 @@ def export_project(manager, output_path: str) -> None:
     # Flush all in-memory WAL pages to the main .db file before copying it.
     # Without this, recent writes that are still in the WAL would be absent
     # from the exported archive (the WAL file itself is not included).
-    result = manager._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    result = manager.checkpoint()
     if result and result[0] != 0:
         log.warning(f"WAL checkpoint may be incomplete (result: {list(result)}). Export may miss recent writes.")
 
@@ -82,6 +101,15 @@ def import_project(archive_path: str) -> str:
             )
 
         project_name = os.path.splitext(db_entries[0])[0]
+        # The destination comes from a name inside the archive, so it must be a
+        # bare filename. Screening for "/" alone is not enough: ZIP entries may
+        # carry backslashes, which are separators on Windows.
+        if (project_name != os.path.basename(project_name)
+                or project_name in ("", ".", "..")
+                or "\\" in project_name or "/" in project_name):
+            raise ValueError(
+                f"Invalid archive: unsafe project database name {db_entries[0]!r}."
+            )
         projects_base = get_projects_base_dir()
         project_dir = os.path.join(projects_base, project_name)
 

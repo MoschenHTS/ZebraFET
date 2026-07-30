@@ -5,7 +5,8 @@ QWidget {
     border: 0px;
     font-family: Arial, sans-serif;
 }
-QLabel { padding: 5px; margin-right: 5px; }
+QLabel { padding: 5px; margin-right: 5px; background-color: transparent; }
+QCheckBox, QRadioButton { background-color: transparent; }
 QTabWidget::pane { border-top: 2px solid #C2E9E0; }
 QTabBar::tab { background: #E3F8F1; border: 1px solid #A1DCD2; padding: 8px 16px; border-top-left-radius: 4px; border-top-right-radius: 4px; }
 QTabBar::tab:selected { background: #C2E9E0; border-bottom-color: #C2E9E0; }
@@ -16,7 +17,26 @@ QPushButton { background-color: #2EC4B6; color: #FFFFFF; border-radius: 4px; pad
 QPushButton:hover { background-color: #28B0A3; }
 QPushButton:pressed { background-color: #229C90; }
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { background-color: #FFFFFF; border: 1px solid #A1DCD2; border-radius: 4px; padding: 8px; }
+QComboBox { padding-right: 26px; }
+QComboBox::drop-down { width: 20px; }
 QHeaderView::section { background-color: #C2E9E0; padding: 4px; border: 1px solid #A1DCD2; font-weight: bold; }
 QTableWidget { gridline-color: #A1DCD2; }
 QToolButton { background-color: #FFFFFF; border: 1px solid #A1DCD2; border-radius: 10px; }
 QToolButton:hover { background-color: #C2E9E0; border: 1px solid #2EC4B6; }
+
+
+QToolButton#CollapsibleSectionHeader {
+    background-color: transparent;
+    border: none;
+    color: #0B3A34;
+    text-align: left;
+    font-weight: bold;
+    padding: 6px 2px;
+}
+QToolButton#CollapsibleSectionHeader:hover {
+    color: #229C90;
+}
+QToolButton#CollapsibleSectionHeader:focus {
+    border: 1px solid #2EC4B6;
+    border-radius: 3px;
+}

@@ -3,6 +3,9 @@ SQL schema definitions for ZebraFET.
 
 PROJECT_DB_SCHEMA  — statements for per-project {name}.db
 REGISTRY_DB_SCHEMA — statements for the global registry.db
+
+The plate_index and day columns below are 1-based; see FIRST_PLATE_INDEX in
+src/core/constants.py.
 """
 
 PROJECT_DB_SCHEMA: list[str] = [
@@ -50,12 +53,23 @@ PROJECT_DB_SCHEMA: list[str] = [
         photoperiod          TEXT NOT NULL DEFAULT '',
         temperature          TEXT NOT NULL DEFAULT '',
         dissolved_oxygen     TEXT NOT NULL DEFAULT '',
-        acceptable_mortality REAL NOT NULL DEFAULT 10.0
+        acceptable_mortality REAL NOT NULL DEFAULT 10.0,
+        fertilization_rate   TEXT NOT NULL DEFAULT ''
     )
     """,
     """
     CREATE TABLE IF NOT EXISTS completed_days (
         day INTEGER PRIMARY KEY
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS water_quality_log (
+        day              INTEGER PRIMARY KEY,
+        temperature      TEXT NOT NULL DEFAULT '',
+        dissolved_oxygen TEXT NOT NULL DEFAULT '',
+        ph               TEXT NOT NULL DEFAULT '',
+        conductivity     TEXT NOT NULL DEFAULT '',
+        notes            TEXT NOT NULL DEFAULT ''
     )
     """,
     """
@@ -139,6 +153,7 @@ PROJECT_DB_SCHEMA: list[str] = [
     """
     CREATE TABLE IF NOT EXISTS test_organisms (
         id                INTEGER PRIMARY KEY CHECK (id = 1),
+        species           TEXT NOT NULL DEFAULT 'Danio rerio',
         strain            TEXT NOT NULL DEFAULT '',
         source            TEXT NOT NULL DEFAULT '',
         collection_method TEXT NOT NULL DEFAULT ''
@@ -150,6 +165,17 @@ PROJECT_DB_SCHEMA: list[str] = [
         test_procedure       TEXT NOT NULL DEFAULT 'Static',
         solution_preparation TEXT NOT NULL DEFAULT '',
         selection_criteria   TEXT NOT NULL DEFAULT ''
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS analysis_settings (
+        id              INTEGER PRIMARY KEY CHECK (id = 1),
+        model_mode      TEXT NOT NULL DEFAULT 'LL4',
+        bottom          REAL NOT NULL DEFAULT 0.0,
+        top             REAL NOT NULL DEFAULT 100.0,
+        abbott          INTEGER NOT NULL DEFAULT 0,
+        control_mode    TEXT NOT NULL DEFAULT 'pooled',
+        noec_correction TEXT NOT NULL DEFAULT 'holm'
     )
     """,
 ]
@@ -169,7 +195,7 @@ REGISTRY_DB_SCHEMA: list[str] = [
     """,
 ]
 
-CURRENT_SCHEMA_VERSION = 7
+CURRENT_SCHEMA_VERSION = 13
 
 
 def initialize_project_db(conn) -> None:

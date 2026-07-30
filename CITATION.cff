@@ -2,12 +2,12 @@ cff-version: 1.2.0
 message: "If you use ZebraFET in your research, please cite it using the metadata below."
 type: software
 title: "ZebraFET — Standardized Zebrafish Embryo Toxicity Test Assistant (OECD TG 236)"
-version: "2.1.4"
-date-released: "2026-07-08"
-doi: "10.5281/zenodo.20183713"
+version: "2.2.0"
+date-released: "2026-07-30"
+doi: "10.5281/zenodo.20183712"
 license: GPL-3.0
 repository-code: "https://github.com/MoschenHTS/ZebraFET"
-url: "https://doi.org/10.5281/zenodo.20183713"
+url: "https://doi.org/10.5281/zenodo.20183712"
 authors:
   - family-names: Moschen
     given-names: Henrique Tamanini S.
@@ -34,12 +34,20 @@ authors:
     affiliation: "Laboratory of Bioenergetics and Metabolism, Department of Genetics and Morphology, Institute of Biology, University of Brasília (UnB), Brasília, DF, Brazil"
 keywords:
   - zebrafish
+  - Danio rerio
   - fish embryo toxicity
   - FET test
   - OECD TG 236
   - ecotoxicology
+  - aquatic toxicology
+  - regulatory toxicology
   - LC50
   - NOEC
   - LOEC
   - dose-response
-abstract: "ZebraFET is a desktop application for conducting, managing, and analysing acute zebrafish embryo toxicity tests (Fish Embryo Toxicity — FET) following OECD Test Guideline 236. It handles project setup, daily well scoring, photo management, statistical analysis (LC50, NOEC/LOEC), OECD validity checks, and Word report generation."
+  - teratogenicity
+  - sublethal endpoints
+  - Python
+  - desktop application
+  - research software
+abstract: "ZebraFET is a free, open-source desktop application for conducting, managing, and analyzing acute zebrafish (Danio rerio) embryo toxicity tests — the Fish Embryo Acute Toxicity (FET) test — following OECD Test Guideline 236. It covers the full experimental workflow in one interface: project setup and concentration planning, plate layout, daily well scoring, photo documentation, and water-quality logging. Analysis covers lethal endpoints (LC50 by logistic regression with bootstrap confidence intervals, a distribution-free trimmed Spearman-Karber LC50, the LC50 refitted at each daily timepoint, NOEC/LOEC with Holm-Bonferroni correction, and Cochran-Armitage trend tests) and sublethal ones (per-endpoint malformation testing with false-discovery-rate control, a sublethal NOEC/LOEC, and a teratogenic index), with odds ratios and Wilson confidence intervals throughout. Test validity is assessed against every OECD TG 236 Section 9 criterion the recorded data supports. Results export as CSV tables and as a formatted Word report. ZebraFET runs on Windows, macOS, and Linux, and is released under the GNU General Public License v3.0."

@@ -50,7 +50,7 @@ class WelcomePage(QWizardPage):
 
         # Description
         desc = QLabel(
-            "ZebraFET helps you record, manage, and analyse Fish Embryo Acute "
+            "ZebraFET helps you record, manage, and analyze Fish Embryo Acute "
             "Toxicity (FET) tests following the OECD Test Guideline 236 protocol.<br><br>"
             "This wizard will guide you through a quick one-time setup:<br>"
             "&nbsp;&nbsp;\u2022&nbsp; Review and accept the software license<br>"
@@ -149,13 +149,14 @@ class DataDirectoryPage(QWizardPage):
         row.addWidget(self._dir_edit, 1)
 
         browse_btn = QPushButton("Browse\u2026")
-        browse_btn.setFixedWidth(90)
+        browse_btn.setMinimumWidth(90)
         browse_btn.clicked.connect(self._browse)
         row.addWidget(browse_btn)
         layout.addLayout(row)
 
         # Status label
         self._status_label = QLabel()
+        self._status_label.setObjectName("ValidationLabel")
         self._status_label.setTextFormat(Qt.TextFormat.RichText)
         self._status_label.setWordWrap(True)
         layout.addWidget(self._status_label)
@@ -184,16 +185,20 @@ class DataDirectoryPage(QWizardPage):
     def _validate(self):
         path = self._dir_edit.text()
         parent = os.path.dirname(path) or path
-        if os.path.isdir(parent):
+        valid = os.path.isdir(parent)
+        if valid:
             self._status_label.setText(
                 f"\u2713 Projects will be stored in: <i>{path}/projects</i>"
             )
-            self._status_label.setStyleSheet("color: green;")
         else:
             self._status_label.setText(
                 "\u26a0 The parent directory does not exist. Please choose a valid path."
             )
-            self._status_label.setStyleSheet("color: red;")
+        # Styled per theme rather than by literal green and red, which the dark
+        # theme rendered against a background they were never chosen for.
+        self._status_label.setProperty("valid", valid)
+        self._status_label.style().unpolish(self._status_label)
+        self._status_label.style().polish(self._status_label)
 
     def initializePage(self):
         self._validate()
@@ -232,8 +237,8 @@ class FinishPage(QWizardPage):
         data_dir = self.field("data_dir") or DataDirectoryPage._default_dir()
         self._summary.setText(
             f"<b>Data directory:</b> {data_dir}/projects<br><br>"
-            "Your settings have been saved. You can change them later from "
-            "the application's settings menu."
+            "Your settings have been saved. The data folder can be changed later "
+            "from File > Change Data Folder."
         )
 
 

@@ -11,8 +11,14 @@ QWidget {
     background-color: #2d2d2d;
     color: #f0f0f0;
     font-family: "Inter";
-    font-size: 11pt;
 }
+
+/* A custom QWidget subclass does not paint the rule above unless it sets
+   WA_StyledBackground, but these classes do — so each drew its own opaque box
+   over whatever page color showed through. The labels that are meant to read
+   as badges set a background of their own in the ID rules further down, which
+   outrank this. */
+QLabel, QCheckBox, QRadioButton { background-color: transparent; }
 
 QFrame#Sidebar {
     background-color: #252526;
@@ -114,7 +120,6 @@ QPushButton#NavButton {
     border: none;
     padding: 10px;
     text-align: left;
-    font-size: 11pt;
 }
 QPushButton#NavButton:hover {
     background-color: #3e3e3e;
@@ -128,6 +133,22 @@ QPushButton#NavButton:checked {
 }
 QPushButton#NavButton:disabled {
     color: #888888;
+}
+
+QToolButton#CollapsibleSectionHeader {
+    background-color: transparent;
+    border: none;
+    color: #e0e0e0;
+    text-align: left;
+    font-weight: bold;
+    padding: 6px 2px;
+}
+QToolButton#CollapsibleSectionHeader:hover {
+    color: #a9cce8;
+}
+QToolButton#CollapsibleSectionHeader:focus {
+    border: 1px solid #007acc;
+    border-radius: 3px;
 }
 
 QPushButton#LinkButton {
@@ -172,6 +193,7 @@ QComboBox {
     border: 1px solid #555;
     border-radius: 4px;
     padding: 6px;
+    padding-right: 24px;
 }
 QComboBox:hover {
     border-color: #6a6a6a;
@@ -184,6 +206,7 @@ QComboBox:disabled {
 }
 QComboBox::drop-down {
     border: none;
+    width: 20px;
 }
 QComboBox::down-arrow {
     image: url(resources/icons/chevron-down-light.svg);
@@ -285,3 +308,62 @@ FloatingLabelLineEdit QLabel#FloatingLabel { color: #a0a0a0; background-color: #
 PlateThumbnail { border: 2px solid #3a3a3a; border-radius: 6px; background: #2a2a2a; }
 PlateThumbnail[plateSelected="true"] { border: 2px solid #0078D4; background: #1a3a5c; }
 PlateThumbnail:hover { border-color: #666; }
+
+/* ── Save feedback ──────────────────────────────────────────────────────── */
+/* Success and failure must not look alike: the label is the only report the
+   operator gets that a flush to disk did or did not happen. */
+QLabel#SaveFeedbackLabel { font-weight: bold; padding: 4px 10px; border-radius: 4px; }
+QLabel#SaveFeedbackLabel[success="true"] { color: #d4edda; background-color: #1a4d2e; }
+QLabel#SaveFeedbackLabel[failure="true"] { color: #f8d7da; background-color: #9b212a; }
+
+/* ── Secondary button ───────────────────────────────────────────────────── */
+QPushButton#SecondaryButton {
+    background-color: transparent;
+    color: #4aa8e0;
+    border: 1px solid #4aa8e0;
+}
+QPushButton#SecondaryButton:hover { background-color: #17364d; }
+QPushButton#SecondaryButton:pressed { background-color: #0f2536; }
+QPushButton#SecondaryButton:disabled { color: #6a6a6a; border-color: #444444; }
+
+/* ── Analysis warnings ──────────────────────────────────────────────────── */
+QLabel#InvalidTestLabel {
+    color: #ffd7da;
+    background-color: #9b212a;
+    border: 1px solid #c0392b;
+    border-radius: 4px;
+    padding: 6px;
+}
+QLabel#UnevaluableLabel { color: #fca652; }
+
+/* ── Loading overlay ────────────────────────────────────────────────────── */
+QFrame#LoadingOverlay { background-color: rgba(0, 0, 0, 180); border-radius: 10px; }
+QLabel#LoadingOverlayLabel { color: #ffffff; background-color: transparent; }
+
+/* ── Read-only notice ───────────────────────────────────────────────────── */
+QLabel#ReadOnlyNotice { color: #1e1e1e; background-color: #fca652; border-radius: 4px; padding: 4px 8px; }
+
+/* ── Wells ──────────────────────────────────────────────────────────────── */
+/* WellWidget paints itself, so its palette arrives as Qt properties. */
+WellWidget {
+    qproperty-unassignedFill: rgba(73, 80, 87, 80);
+    qproperty-hoverTint: rgba(255, 255, 255, 40);
+    qproperty-selectionRing: #FFD700;
+    qproperty-assignedBorder: #555555;
+    qproperty-unassignedBorder: #6c757d;
+}
+
+QLabel#ValidationLabel[valid="true"] { color: #6ddf9c; }
+QLabel#ValidationLabel[valid="false"] { color: #e57373; }
+
+/* ── Inline hints ───────────────────────────────────────────────────────── */
+/* Secondary guidance under a control: present, but not competing with it. */
+QLabel#HintLabel { color: #a0a0a0; font-size: 9pt; }
+
+/* ── Drag-and-drop overlay ──────────────────────────────────────────────── */
+QLabel#DropOverlay {
+    background-color: rgba(0, 122, 204, 40);
+    border: 2px dashed #007acc;
+    border-radius: 8px;
+    color: #f0f0f0;
+}

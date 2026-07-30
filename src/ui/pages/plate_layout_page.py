@@ -8,6 +8,7 @@ from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QMouseEvent
 
 from src.core.project_manager import ProjectManager
+from src.ui.commands import PlateLayoutCommand
 from src.ui.components import PlateWidget
 
 log = logging.getLogger(__name__)
@@ -23,7 +24,9 @@ class ConcentrationWidget(QFrame):
         super().__init__(parent)
         self.concentration_data = concentration_data
         self.setAutoFillBackground(True); self.setFrameShape(QFrame.StyledPanel)
-        self.setObjectName("ConcentrationWidget"); self.setFixedSize(120, 50)
+        # A minimum rather than a fixed size, so the group ID is not clipped when
+        # the system font is larger than the one this was measured against.
+        self.setObjectName("ConcentrationWidget"); self.setMinimumSize(120, 50)
         layout = QVBoxLayout(self); layout.setContentsMargins(5, 5, 5, 5); layout.setSpacing(2)
         self.color_swatch = QFrame(self); self.color_swatch.setFixedHeight(20)
         self.color_swatch.setStyleSheet(f"background-color: {self.concentration_data['color']}; border-radius: 5px;")
@@ -52,6 +55,10 @@ class PlateLayoutPage(QWidget):
     concentration groups and provides feedback on assignment counts.
     """
     layout_saved = Signal()
+    #: Text for the main window status bar, for actions that otherwise succeed silently.
+    status_message = Signal(str)
+    #: Emitted with a QUndoCommand for a whole-plate change, for MainWindow to push.
+    layout_command = Signal(object)
 
     def __init__(self, manager: ProjectManager, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -182,15 +189,31 @@ class PlateLayoutPage(QWidget):
             self._counter_labels: dict = {}
 
         counters = self.manager.get_assignment_counters()
+        # get_assignment_counters() derives 'assigned' from the saved database
+        # layout, but this page displays temp_layout — the live, possibly
+        # unsaved editing buffer — so the assigned count must be tallied from
+        # temp_layout alone. temp_layout starts as a copy of that same saved
+        # layout (see enter_page()), so adding this tally on top of the
+        # DB-derived count double-counted every already-saved well: an
+        # untouched 60/60 layout displayed as 120/60.
+        for counts in counters.values():
+            counts['assigned'] = 0
         for plate_data in self.temp_layout.values():
             for conc_id in plate_data.values():
                 if conc_id in counters: counters[conc_id]['assigned'] += 1
 
         for conc_id, counts in sorted(counters.items()):
-            text = f"{conc_id}: {counts['assigned']} / {counts['planned']}"
-            status = "ok"
-            if counts['assigned'] > counts['planned']: status = "error"
-            elif counts['assigned'] < counts['planned']: status = "warning"
+            assigned, planned = counts['assigned'], counts['planned']
+            # The two counts carry the state on their own — equal is complete,
+            # second larger is short, first larger is over plan — so the color
+            # below stays a redundant cue rather than the only signal.
+            if assigned > planned:
+                status = "error"
+            elif assigned < planned:
+                status = "warning"
+            else:
+                status = "ok"
+            text = f"{conc_id}: {assigned} / {planned}"
 
             if conc_id in self._counter_labels:
                 label = self._counter_labels[conc_id]
@@ -211,11 +234,24 @@ class PlateLayoutPage(QWidget):
             if conc_id not in counters:
                 self._counter_labels.pop(conc_id).deleteLater()
 
+    def apply_layout_snapshot(self, layout: Dict[str, Dict[str, str]]) -> None:
+        """Replace the editing buffer wholesale and redraw. Used by undo/redo."""
+        self.temp_layout = copy.deepcopy(layout)
+        self._update_all_plate_views()
+        self.load_counters()
+
+    def _emit_layout_command(self, before: Dict[str, Dict[str, str]], text: str) -> None:
+        self.layout_command.emit(
+            PlateLayoutCommand(self, before, copy.deepcopy(self.temp_layout), text)
+        )
+
     def _clear_current_plate(self) -> None:
         """Clears all assignments from the currently visible plate."""
         current_plate_index = self.plate_tabs.currentIndex() + 1
+        before = copy.deepcopy(self.temp_layout)
         self.temp_layout[str(current_plate_index)] = {}
         self._update_all_plate_views(); self.load_counters()
+        self._emit_layout_command(before, f"clear plate {current_plate_index}")
 
     def _duplicate_current_plate(self) -> None:
         """Copies the layout of the current plate to the next one."""
@@ -223,14 +259,27 @@ class PlateLayoutPage(QWidget):
         dest_index = current_plate_index + 1
         if dest_index > self.plate_tabs.count():
             QMessageBox.warning(self, "Duplicate Error", "This is the last plate."); return
+        before = copy.deepcopy(self.temp_layout)
         source_layout = self.temp_layout.get(str(current_plate_index), {})
         self.temp_layout[str(dest_index)] = copy.deepcopy(source_layout)
         self._update_all_plate_views(); self.load_counters()
+        self._emit_layout_command(before, f"duplicate plate {current_plate_index}")
 
     def _save_layout(self) -> None:
-        """Commits the temporary layout to the ProjectManager and saves the project."""
-        self.manager.commit_plate_layout(self.temp_layout)
+        """Commit the working layout to the database."""
+        try:
+            self.manager.commit_plate_layout(self.temp_layout)
+        except Exception as e:
+            log.error(f"Could not save the plate layout: {e}", exc_info=True)
+            QMessageBox.critical(
+                self, "Layout Not Saved",
+                "The plate layout could not be saved.\n\n"
+                "Your changes are still on screen. See Help > Open Log Folder for details."
+            )
+            return
         self.layout_saved.emit()
+        assigned = sum(len(wells) for wells in self.temp_layout.values())
+        self.status_message.emit(f"Plate layout saved — {assigned} wells assigned.")
 
     def start_painting_single_well(self, well_id: str, plate_index: int) -> None:
         """Initiates click-and-drag painting mode."""

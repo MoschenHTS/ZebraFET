@@ -1,7 +1,6 @@
 # main_window.py
 import os
 import re
-import sys
 import logging
 import shutil
 from typing import Optional
@@ -9,13 +8,14 @@ from typing import Optional
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QFrame, QStackedWidget, QButtonGroup,
                              QLabel, QMessageBox, QFileDialog, QGraphicsOpacityEffect,
-                             QApplication)
-from PySide6.QtCore import (QSize, QPropertyAnimation, QEasingCurve, Qt, QEvent,
+                             QApplication, QMenu)
+from PySide6.QtCore import (QSize, QPropertyAnimation, QEasingCurve, Qt,
                               QSettings, QTimer, QByteArray, QParallelAnimationGroup,
-                              QObject, Signal, QThread)
-from PySide6.QtGui import QIcon, QFont, QCloseEvent, QAction, QKeySequence
+                              QObject, Signal, QThread, QStandardPaths, QUrl)
+from PySide6.QtGui import (QIcon, QFont, QCloseEvent, QAction, QKeySequence,
+                           QUndoStack, QDesktopServices)
 
-from src.core.utils import resource_path, get_projects_base_dir
+from src.core.utils import resource_path, get_projects_base_dir, set_icon_theme
 from src.ui.pages.project_hub_page import ProjectHubPage
 from src.ui.widgets.experiment_view_widget import ExperimentViewWidget
 from src.ui.pages.plate_layout_page import PlateLayoutPage
@@ -72,6 +72,9 @@ class MainWindow(QMainWindow):
         self.page_transition_animation: Optional[QParallelAnimationGroup] = None
         self.load_thread: Optional[QThread] = None
         self.load_worker: Optional[ProjectLoadWorker] = None
+        # One stack for the window; cleared whenever the open project changes, so
+        # an undo can never be applied to a project it did not come from.
+        self.undo_stack = QUndoStack(self)
 
         self._init_ui()
         self._load_initial_page()
@@ -90,18 +93,9 @@ class MainWindow(QMainWindow):
 
         is_maximized_str = self.settings.value("maximized", "false", type=str)
         if is_maximized_str.lower() == 'true':
-            if sys.platform == "win32":
-                self.showFullScreen()
-            else:
-                self.showMaximized()
+            self.showMaximized()
 
         log.info("Window state restored.")
-
-    def changeEvent(self, event):
-        if sys.platform == "win32" and event.type() == QEvent.Type.WindowStateChange:
-            if self.windowState() & Qt.WindowState.WindowMaximized:
-                QTimer.singleShot(0, self.showFullScreen)
-        super().changeEvent(event)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape and self.isFullScreen():
@@ -142,6 +136,9 @@ class MainWindow(QMainWindow):
         self.toggle_button.setCheckable(True)
         self.toggle_button.setChecked(True)
         self.toggle_button.clicked.connect(self.toggle_sidebar)
+        # Icon-only, so it carries no text for a screen reader to announce.
+        self.toggle_button.setAccessibleName("Toggle sidebar")
+        self.toggle_button.setToolTip("Collapse the sidebar to icons.")
 
         self.nav_button_group = QButtonGroup(self)
         self.nav_button_group.setExclusive(True)
@@ -155,7 +152,10 @@ class MainWindow(QMainWindow):
         self.save_btn = QPushButton()
         self.save_btn.setObjectName("IconButton")
         self.save_btn.setIcon(QIcon(resource_path("resources/icons/save.svg")))
-        self.save_btn.setToolTip("Save Project (Ctrl+S)")
+        self.save_btn.setToolTip(
+            "All changes are saved as you make them. Use this (Ctrl+S) to flush the "
+            "database to disk before copying or backing up the project folder."
+        )
         self.save_btn.clicked.connect(self.save_project)
 
         self.btn_export = QPushButton()
@@ -187,7 +187,9 @@ class MainWindow(QMainWindow):
 
         self.save_feedback_label = QLabel()
         self.save_feedback_label.setObjectName("SaveFeedbackLabel")
-        self.save_feedback_label.setFixedWidth(120)
+        # A minimum rather than a fixed width: "Save Failed!" has to stay readable
+        # when the system font is larger than the one this was measured against.
+        self.save_feedback_label.setMinimumWidth(120)
         self.save_feedback_label.hide()
 
         bottom_layout = QHBoxLayout()
@@ -220,14 +222,290 @@ class MainWindow(QMainWindow):
         self._update_theme_icon()
 
     def _setup_shortcuts(self):
-        save_action = QAction("Save", self)
-        save_action.setShortcut(QKeySequence.StandardKey.Save)
-        save_action.triggered.connect(self.save_project)
-        self.addAction(save_action)
+        """Build the menu bar.
 
-    def show_about_dialog(self) -> None:
+        Actions live in menus rather than on the window alone: an action added
+        with addAction() has a working shortcut but no label, no enabled state
+        and nothing for a user to discover it by. QKeySequence StandardKey maps
+        each shortcut to the platform convention, and the menu roles let Qt move
+        About, Preferences and Quit into the application menu on macOS.
+
+        Menus are retained on the window because a QMenu returned by
+        addMenu(str) is owned by Python and is destroyed once the local
+        reference goes out of scope.
+        """
+        menubar = self.menuBar()
+
+        # ── File ───────────────────────────────────────────────────────────
+        self.menu_file = QMenu("&File", self)
+        menubar.addMenu(self.menu_file)
+
+        self.action_new = self._menu_action(
+            self.menu_file, "&New Project...", self.request_create_new_project,
+            QKeySequence.StandardKey.New, "Set up a new FET experiment.")
+        self.action_open = self._menu_action(
+            self.menu_file, "&Open Project...", self.hub_page._browse_for_project,
+            QKeySequence.StandardKey.Open, "Open a project folder.")
+
+        self.menu_open_recent = QMenu("Open &Recent", self)
+        self.menu_open_recent.aboutToShow.connect(self._populate_recent_menu)
+        self.menu_file.addMenu(self.menu_open_recent)
+        self.menu_file.addSeparator()
+
+        self.action_close = self._menu_action(
+            self.menu_file, "&Close Project", self.request_show_hub,
+            QKeySequence.StandardKey.Close, "Return to the Projects Hub.")
+        self.action_save = self._menu_action(
+            self.menu_file, "&Save to Disk", self.save_project,
+            QKeySequence.StandardKey.Save,
+            "Flush the database to disk before copying or backing up. "
+            "Edits are already saved as you make them.")
+        self.menu_file.addSeparator()
+
+        self.menu_import = QMenu("&Import", self)
+        self.menu_file.addMenu(self.menu_import)
+        self.action_import_project = self._menu_action(
+            self.menu_import, "Project Archive (.zfet)...",
+            lambda: self.hub_page._import_project(),
+            status="Open a project exported from another machine.")
+
+        self.menu_export = QMenu("&Export", self)
+        self.menu_file.addMenu(self.menu_export)
+        self.action_export_project = self._menu_action(
+            self.menu_export, "Project Archive (.zfet)...", self._export_project,
+            status="Package the project and its photos for sharing or archiving.")
+        self.menu_export.addSeparator()
+        self.action_export_report = self._menu_action(
+            self.menu_export, "Word &Report...",
+            lambda: self._invoke_on_results("_export_to_docx"),
+            status="Choose sections and export the formatted report.")
+        self.action_export_tables = self._menu_action(
+            self.menu_export, "Analysis &Tables (CSV)...",
+            lambda: self._invoke_on_results("_export_analysis_tables"),
+            status="Write the computed results as CSV tables.")
+        self.action_export_raw = self._menu_action(
+            self.menu_export, "Raw &Data (CSV)...",
+            lambda: self._invoke_on_results("_export_to_csv"),
+            status="Write one row per well observation.")
+        self.action_export_figure = self._menu_action(
+            self.menu_export, "Current &Figure...",
+            lambda: self._invoke_on_results("_export_current_figure"),
+            status="Save the visible figure as PNG, SVG or PDF at 600 dpi.")
+        self.action_data_folder = self._menu_action(
+            self.menu_file, "Change &Data Folder...", self._change_data_folder,
+            status="Choose where ZebraFET stores projects and the registry.")
+        self.menu_file.addSeparator()
+
+        self.action_quit = self._menu_action(
+            self.menu_file, "&Quit", self.close, QKeySequence.StandardKey.Quit)
+        self.action_quit.setMenuRole(QAction.MenuRole.QuitRole)
+
+        # ── Edit ───────────────────────────────────────────────────────────
+        self.menu_edit = QMenu("&Edit", self)
+        menubar.addMenu(self.menu_edit)
+
+        self.action_undo = self.undo_stack.createUndoAction(self, "&Undo")
+        self.action_undo.setShortcut(QKeySequence.StandardKey.Undo)
+        self.menu_edit.addAction(self.action_undo)
+        self.action_redo = self.undo_stack.createRedoAction(self, "&Redo")
+        self.action_redo.setShortcut(QKeySequence.StandardKey.Redo)
+        self.menu_edit.addAction(self.action_redo)
+        self.menu_edit.addSeparator()
+
+        self.action_copy_figure = self._menu_action(
+            self.menu_edit, "&Copy Figure",
+            lambda: self._invoke_on_results("_copy_current_figure"),
+            status="Copy the visible figure to the clipboard.")
+        self.menu_edit.addSeparator()
+
+        self.action_settings = self._menu_action(
+            self.menu_edit, "Project &Settings...", self._open_project_settings,
+            QKeySequence.StandardKey.Preferences,
+            "Edit substance, conditions, organisms and methodology.")
+        self.action_settings.setMenuRole(QAction.MenuRole.NoRole)
+
+        # ── Go ─────────────────────────────────────────────────────────────
+        # The sidebar is the only way to move between stages, and it carries no
+        # accelerators; collapsed, it is icons alone.
+        self.menu_go = QMenu("&Go", self)
+        menubar.addMenu(self.menu_go)
+        self._nav_actions = []
+        nav_targets = [
+            ("Projects &Hub", self.btn_hub),
+            ("&Concentration Plan", self.btn_dilution),
+            ("&Plate Layout", self.btn_layout),
+            ("&Experiment View", self.btn_experiment),
+            ("Photo &Documentation", self.btn_photo_assistant),
+            ("&Results and Analysis", self.btn_results),
+        ]
+        for index, (label, button) in enumerate(nav_targets, start=1):
+            action = self._menu_action(
+                self.menu_go, label, lambda _=False, b=button: b.click(),
+                f"Ctrl+{index}")
+            self._nav_actions.append(action)
+
+        # ── Analysis ───────────────────────────────────────────────────────
+        self.menu_analysis = QMenu("&Analysis", self)
+        menubar.addMenu(self.menu_analysis)
+        self.action_recalculate = self._menu_action(
+            self.menu_analysis, "&Recalculate", lambda: self._invoke_on_results("run_analysis"),
+            QKeySequence.StandardKey.Refresh,
+            "Run the statistical analysis for the selected day.")
+        self.action_timeseries = self._menu_action(
+            self.menu_analysis, "LC50 &Time-Series",
+            lambda: self._invoke_on_results("run_timeseries"),
+            status="Fit the LC50 at every daily timepoint.")
+
+        # ── View ───────────────────────────────────────────────────────────
+        self.menu_view = QMenu("&View", self)
+        menubar.addMenu(self.menu_view)
+        self.action_theme = self._menu_action(
+            self.menu_view, "Toggle &Theme", self.toggle_theme,
+            status="Switch between the light and dark themes.")
+        self.action_sidebar = self._menu_action(
+            self.menu_view, "Toggle &Sidebar", lambda: self.toggle_button.click(),
+            status="Collapse the sidebar to icons.")
+
+        # ── Help ───────────────────────────────────────────────────────────
+        self.menu_help = QMenu("&Help", self)
+        menubar.addMenu(self.menu_help)
+        self.action_guide = self._menu_action(
+            self.menu_help, "&User Guide", lambda: self.show_about_dialog("User Guide"),
+            QKeySequence.StandardKey.HelpContents)
+        self.action_guideline = self._menu_action(
+            self.menu_help, "OECD TG &236", lambda: self.show_about_dialog("OECD TG 236"),
+            status="The guideline this software implements.")
+        self.menu_help.addSeparator()
+        self.action_licenses = self._menu_action(
+            self.menu_help, "&Licenses", lambda: self.show_about_dialog("Licenses"))
+        self.action_open_log = self._menu_action(
+            self.menu_help, "Open &Log Folder", self._open_log_folder,
+            status="Reveal zebrafet.log for troubleshooting.")
+        self.menu_help.addSeparator()
+        self.action_about = self._menu_action(
+            self.menu_help, "&About ZebraFET", lambda: self.show_about_dialog())
+        self.action_about.setMenuRole(QAction.MenuRole.AboutRole)
+
+        # The status bar is created here but left empty: it reports transient
+        # results, so a permanent message in it is just noise.
+        self.statusBar()
+
+        #: Actions that make no sense without an open project.
+        self._project_actions = [
+            self.action_close, self.action_save, self.action_settings,
+            self.action_export_project, self.action_export_report,
+            self.action_export_tables, self.action_export_raw,
+            self.action_export_figure, self.action_copy_figure,
+            self.action_recalculate, self.action_timeseries,
+        ] + self._nav_actions[1:]
+        self._update_project_actions()
+
+    def _menu_action(self, menu, text, slot, shortcut=None, status=""):
+        """Create, wire and register a menu action."""
+        action = QAction(text, self)
+        if shortcut is not None:
+            action.setShortcut(shortcut if isinstance(shortcut, QKeySequence.StandardKey)
+                               else QKeySequence(shortcut))
+        if status:
+            action.setStatusTip(status)
+        action.triggered.connect(slot)
+        menu.addAction(action)
+        return action
+
+    def _populate_recent_menu(self) -> None:
+        """Fill Open Recent from the project registry, most recent first."""
+        self.menu_open_recent.clear()
+        try:
+            from src.database.registry import ProjectRegistry
+            from src.core.utils import get_registry_db_path
+            registry = ProjectRegistry(get_registry_db_path())
+            try:
+                projects = registry.list_projects()
+            finally:
+                registry.close()
+        except Exception as e:
+            log.warning(f"Could not read the project registry: {e}")
+            projects = []
+
+        if not projects:
+            empty = self.menu_open_recent.addAction("No Recent Projects")
+            empty.setEnabled(False)
+            return
+
+        for entry in projects[:10]:
+            directory = os.path.dirname(entry.get("db_path", ""))
+            name = entry.get("project_name") or os.path.basename(directory)
+            action = self.menu_open_recent.addAction(name)
+            action.setStatusTip(directory)
+            if not os.path.isdir(directory):
+                action.setEnabled(False)
+                action.setText(f"{name} (missing)")
+                continue
+            action.triggered.connect(lambda _=False, d=directory: self.start_project_load(d))
+
+    def _update_project_actions(self) -> None:
+        """Enable the actions that need an open project."""
+        has_project = self.project_manager is not None
+        for action in getattr(self, "_project_actions", []):
+            action.setEnabled(has_project)
+
+    def _invoke_on_results(self, method_name: str) -> None:
+        """Run an export from the Results page, switching to it first."""
+        results = getattr(self, "results_page", None)
+        if results is None:
+            QMessageBox.information(
+                self, "No Analysis Yet",
+                "Open a project and run the analysis before exporting results."
+            )
+            return
+        self.btn_results.setChecked(True)
+        self.switch_page(results)
+        getattr(results, method_name)()
+
+    def _change_data_folder(self) -> None:
+        """Repoint the data directory the setup wizard configured.
+
+        Existing projects are not moved: the new folder is where subsequent ones
+        are created and looked for, so the choice is confirmed before it is
+        written and takes effect on the next launch.
+        """
+        current = self.settings.value("setup/data_dir", "")
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Choose the ZebraFET Data Folder", current or os.path.expanduser("~")
+        )
+        if not chosen or chosen == current:
+            return
+        reply = QMessageBox.question(
+            self, "Change Data Folder",
+            f"Projects will be stored in:\n{chosen}\n\n"
+            "Existing projects are not moved, and will no longer be listed until "
+            "you import them or move them yourself. Restart ZebraFET to apply.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        self.settings.setValue("setup/data_dir", chosen)
+        self.settings.sync()
+        self.statusBar().showMessage("Data folder changed; restart to apply.", 8000)
+
+    def _show_status_message(self, message: str) -> None:
+        """Report an action that would otherwise complete without any feedback."""
+        self.statusBar().showMessage(message, 6000)
+
+    def _open_log_folder(self) -> None:
+        """Reveal the folder holding zebrafet.log."""
+        log_dir = QStandardPaths.writableLocation(QStandardPaths.AppDataLocation)
+        if not log_dir or not os.path.isdir(log_dir):
+            QMessageBox.information(self, "Log Folder", "The log folder is not available yet.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(log_dir))
+
+    def show_about_dialog(self, tab_name: Optional[str] = None) -> None:
+        """Open the About dialog, optionally on a named tab."""
         if self.about_dialog is None:
             self.about_dialog = AboutDialog(self)
+        if tab_name:
+            self.about_dialog.show_tab(tab_name)
         self.about_dialog.exec()
 
     def _open_project_settings(self):
@@ -247,6 +525,9 @@ class MainWindow(QMainWindow):
         button.setObjectName("NavButton")
         button.setCheckable(True)
         button.setToolTip(text)
+        # Collapsing the sidebar clears the button text, leaving nothing to
+        # announce; the accessible name is set once and survives that.
+        button.setAccessibleName(text)
         if icon_path:
             button.setIcon(QIcon(resource_path(icon_path)))
             button.setIconSize(QSize(22, 22))
@@ -319,6 +600,21 @@ class MainWindow(QMainWindow):
     def toggle_theme(self):
         self.theme_manager.toggle_theme()
         self._update_theme_icon()
+        self._refresh_themed_icons()
+
+    def _refresh_themed_icons(self):
+        """Re-request the two-tone icons after a theme change.
+
+        The QSS reloads on its own, but icons set from Python are QIcon objects
+        already handed to widgets; pointing the cache at the other variant does
+        nothing until each holder asks again. Only the two views that carry
+        two-tone icons need rebuilding.
+        """
+        set_icon_theme(self.theme_manager.current_theme)
+        if getattr(self, "experiment_page", None) is not None:
+            self.experiment_page.refresh_view()
+        if getattr(self, "photo_assistant_page", None) is not None:
+            self.photo_assistant_page.refresh_view()
 
     def _cleanup_temp_pages(self):
         for page in self.temp_pages:
@@ -351,6 +647,7 @@ class MainWindow(QMainWindow):
         if self.project_manager is not None:
             self.project_manager.close()
         self.project_manager = None
+        self._update_project_actions()
         self.pages_widget.setCurrentWidget(self.hub_page)
         self._set_project_pages_enabled(False)
         self.btn_hub.setChecked(True)
@@ -425,10 +722,28 @@ class MainWindow(QMainWindow):
         self.hub_page._import_project(path)
 
     def save_project(self):
+        """Flush the write-ahead log and refresh the hub entry.
+
+        Every edit is committed as it is made, so there is nothing to save in the
+        usual sense. What this does provide is a point at which the .db file on
+        disk is fully up to date — WAL mode otherwise leaves recent writes in the
+        sidecar — which is what someone copying or backing up a project folder
+        needs. The button is labelled accordingly rather than implying that
+        unsaved work exists.
+        """
         if not self.project_manager:
             return
-        # All writes are transactional; trigger a registry sync and show feedback.
-        self.project_manager._sync_to_registry()
+        try:
+            result = self.project_manager.checkpoint()
+            if result and result[0] != 0:
+                raise RuntimeError(f"checkpoint returned {list(result)}")
+            self.project_manager._sync_to_registry()
+        except Exception as e:
+            log.error(f"Could not flush the project database: {e}", exc_info=True)
+            self._show_save_feedback(
+                False, "Could not flush to disk. See the log for details.", force_show=True
+            )
+            return
         self._show_save_feedback(True, "All changes saved.", force_show=True)
 
     def _export_project(self):
@@ -521,6 +836,7 @@ class MainWindow(QMainWindow):
 
         self._cleanup_temp_pages()
         self.project_manager = manager
+        self._update_project_actions()
         
         try:
             self._reload_project_pages(is_new_project=is_new_project)
@@ -575,9 +891,22 @@ class MainWindow(QMainWindow):
             lambda: self._reload_project_pages(is_new_project=False)
         )
         self.layout_page.layout_saved.connect(self.experiment_page.refresh_view)
+        self.layout_page.status_message.connect(self._show_status_message)
+        self.results_page.status_message.connect(self._show_status_message)
         self.experiment_page.well_editor.data_changed.connect(
             lambda *_: self.results_page.mark_dirty()
         )
+        self.experiment_page.well_editor.edit_committed.connect(self._push_well_edit)
+        self.layout_page.layout_command.connect(self.undo_stack.push)
+
+        # A stack carried over from another project would undo into this one, so
+        # it is cleared when the project changes. Editing the concentration plan
+        # or the project settings also rebuilds these pages, and clearing there
+        # discarded the operator's scoring history without saying so.
+        current_project = self.project_manager.db_path if self.project_manager else None
+        if getattr(self, "_undo_stack_project", None) != current_project:
+            self.undo_stack.clear()
+            self._undo_stack_project = current_project
 
         page_map = {
             self.btn_dilution: self.concentration_page,
@@ -606,6 +935,26 @@ class MainWindow(QMainWindow):
 
         if hasattr(initial_page, 'enter_page'):
             initial_page.enter_page()
+
+    def _push_well_edit(self, edit: dict) -> None:
+        """Record a well edit on the undo stack."""
+        from src.ui.commands import WellEditCommand
+
+        if not self.project_manager:
+            return
+        self.undo_stack.push(WellEditCommand(
+            self.project_manager, edit["day"], edit["plate"], edit["well"],
+            edit["before"], edit["after"], self._on_well_edit_applied,
+        ))
+
+    def _on_well_edit_applied(self, day: int, plate: int, well: str) -> None:
+        """Bring the interface back in step after an undo or redo."""
+        page = getattr(self, "experiment_page", None)
+        if page is not None:
+            page.reload_well(day, plate, well)
+        results = getattr(self, "results_page", None)
+        if results is not None:
+            results.mark_dirty()
 
     def switch_page(self, page_to_show: QWidget):
         if self.pages_widget.currentWidget() is page_to_show:

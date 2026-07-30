@@ -72,10 +72,36 @@ class TestSelectBestModelLc50:
         result = select_best_model_lc50(data)
         assert float(result["r_squared"]) >= 0.90
 
-    def test_insufficient_data_returns_message(self):
+    def test_three_groups_fit_a_constrained_candidate(self):
+        """Auto-selection falls back to a model the design can support.
+
+        The 4PL is out of reach at three groups, but the 2PL and 3PL are not, so
+        refusing outright discarded a usable estimate.
+        """
         data = _make_substrates([1, 2, 3], [0, 50, 100])
         result = select_best_model_lc50(data)
+        assert result.get("_fitted_params") is not None
+        assert "not enough" not in result["lc50"].lower()
+
+    def test_single_group_is_still_refused(self):
+        data = _make_substrates([1], [50])
+        result = select_best_model_lc50(data)
         assert "not enough" in result["lc50"].lower()
+
+    def test_four_parameter_model_is_marked_unestimable_at_five_groups(self):
+        """AICc is undefined once n <= k+1, which the table must say outright.
+
+        At the OECD-minimum five concentrations this excludes the 4PL, so a
+        reader needs to see that it was ruled out by the design rather than
+        simply scoring worse.
+        """
+        data = _make_substrates([1, 2, 4, 8, 16], [0, 10, 50, 90, 100])
+        result = select_best_model_lc50(data)
+        table = result["model_info"]["aic_table"]
+        four_pl = next((e for e in table if e["k"] == 4), None)
+        assert four_pl is not None
+        assert four_pl["estimable"] is False
+        assert result["model_info"]["n_free"] < 4
 
     def test_no_mortality_returns_message(self):
         data = _make_substrates([1, 2, 4, 8], [0, 0, 0, 0])

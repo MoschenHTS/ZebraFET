@@ -11,7 +11,7 @@
 
 [Setup]
 AppName=ZebraFET
-AppVersion=2.1.4 ; Keep in sync with src/core/constants.py APP_VERSION
+AppVersion=2.2.0 ; Keep in sync with src/core/constants.py APP_VERSION
 AppPublisher=Henrique Tamanini S. Moschen
 AppPublisherURL=https://orcid.org/0000-0002-1920-8915
 AppSupportURL=https://github.com/MoschenHTS/ZebraFET
@@ -34,6 +34,10 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+; Qt 6.11, which PySide6 6.11 binds, supports Windows 10 version 1809 (build
+; 17763) and later. Declared here so an older machine is refused at install time
+; with a clear message rather than failing to start afterwards.
+MinVersion=10.0.17763
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

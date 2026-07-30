@@ -13,6 +13,12 @@ class ThemeManager:
     # Define a key for storing the theme setting
     THEME_SETTING_KEY = "Appearance/Theme"
 
+    #: The themes toggle_theme cycles through. The themes directory may hold more
+    #: than these — anything not listed here is loaded but never offered, so a
+    #: settings key naming one must not be applied on the next launch.
+    SELECTABLE_THEMES = ("light", "dark")
+    DEFAULT_THEME = "dark"
+
     def __init__(self, app: QApplication, settings: QSettings):
         """
         Initializes the ThemeManager.
@@ -73,9 +79,16 @@ class ThemeManager:
     def apply_last_theme(self):
         """
         Loads and applies the theme stored in settings, or a default.
+
+        A stored name that is no longer selectable — or no longer present in the
+        themes directory — falls back to the default rather than leaving the
+        window in a state the theme control cannot get out of.
         """
-        # Read the last used theme from settings, defaulting to 'dark'
-        last_theme = self.settings.value(self.THEME_SETTING_KEY, "dark")
+        last_theme = self.settings.value(self.THEME_SETTING_KEY, self.DEFAULT_THEME)
+        if last_theme not in self.SELECTABLE_THEMES or last_theme not in self.themes:
+            log.warning(f"Stored theme '{last_theme}' is not selectable; "
+                        f"falling back to '{self.DEFAULT_THEME}'.")
+            last_theme = self.DEFAULT_THEME
         self.apply_theme(last_theme)
 
     def toggle_theme(self):

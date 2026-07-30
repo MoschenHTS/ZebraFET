@@ -31,7 +31,7 @@ def manager(tmp_path):
     m = ProjectManager.create_new(str(tmp_path / "TestOECD"), INITIAL_DATA)
     m.set_concentrations(CONCENTRATIONS, required_embryos=20, required_plates=1)
     layout = {
-        "0": {
+        "1": {
             f"A{i+1}": CTRL_ID for i in range(5)
         } | {
             f"B{i+1}": CONC_ID for i in range(5)
@@ -71,7 +71,7 @@ class TestAcceptableMortalityPersistence:
         assert conditions["temperature"] == "26°C"
         assert conditions["dissolved_oxygen"] == "8.2 mg/L"
 
-    def test_unrecognised_fields_are_ignored(self, manager):
+    def test_unrecognized_fields_are_ignored(self, manager):
         """Fields not in the allowed set should be silently ignored."""
         before = manager.get_test_conditions()
         manager.update_test_conditions(unknown_field="value")
@@ -82,7 +82,7 @@ class TestAcceptableMortalityPersistence:
 class TestControlMortalityDetection:
     def _save(self, manager, well_id, status):
         manager.save_well_data(
-            day=1, plate_index=0, well_id=well_id,
+            day=1, plate_index=1, well_id=well_id,
             status=status,
             sublethal_conditions=[], lethal_conditions=[], notes="",
         )

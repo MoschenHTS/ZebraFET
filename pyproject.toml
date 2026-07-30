@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ZebraFET"
-version = "2.1.4"
+version = "2.2.0"
 description = "Fish Embryo Acute Toxicity (FET) test assistant following OECD TG 236"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -36,6 +36,9 @@ dependencies = [
     "python-docx>=1.2.0",
     "Markdown>=3.5",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
 
 [project.urls]
 Repository = "https://github.com/MoschenHTS/ZebraFET"

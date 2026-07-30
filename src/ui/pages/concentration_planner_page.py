@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor, QIntValidator, QDoubleValidator
 
 from src.ui.components import FloatingLabelLineEdit
 from src.core.constants import CONCENTRATION_TYPE_MAP, CONCENTRATION_TYPE_REVERSE
+from src.ui.typography import scaled_pt
 
 class ConcentrationPlannerPage(QWidget):
     """
@@ -71,7 +72,7 @@ class ConcentrationPlannerPage(QWidget):
         title_text = "Edit Concentration Plan" if self.is_editing else f"Step 2: Plan Concentrations for '{self.data['project_name']}'"
         title_label = QLabel(title_text)
         font = self.font()
-        font.setPointSize(14)
+        font.setPointSizeF(scaled_pt(14))
         font.setBold(True)
         title_label.setFont(font)
 
@@ -319,7 +320,11 @@ class ConcentrationPlannerPage(QWidget):
         color_button = QPushButton()
         color = QColor(data.get("color")) if data and data.get("color") else QColor(self.COLOR_POOL[row % len(self.COLOR_POOL)])
         color_button.setStyleSheet(f"background-color: {color.name()}; border-radius: 5px;")
+        color_button.setProperty("group_color", color.name())
         color_button.setProperty("row", row)
+        # A bare swatch has no text or icon to announce, and the color it shows is
+        # the only thing identifying the group on the plate.
+        self._describe_color_button(color_button, row, color)
         self.table.setCellWidget(row, 5, color_button)
 
         if data:
@@ -341,16 +346,22 @@ class ConcentrationPlannerPage(QWidget):
             color_button.clicked.connect(self._open_color_picker)
         )
 
+    def _describe_color_button(self, button: QPushButton, row: int, color: QColor) -> None:
+        """Give a bare color swatch a name and a tooltip naming its group."""
+        item = self.table.item(row, 0)
+        group_id = item.text() if item else f"row {row + 1}"
+        button.setAccessibleName(f"Color for group {group_id}")
+        button.setToolTip(f"Group {group_id} — {color.name()}. Click to choose another color.")
+
     def _open_color_picker(self) -> None:
         """Opens a color dialog to let the user pick a new color for a group."""
         button = self.sender()
-        row = button.property("row")
-        style = button.styleSheet()
-        current_color_hex = style.split("background-color: ")[1].split(";")[0]
-        current_color = QColor(current_color_hex)
+        current_color = QColor(button.property("group_color") or "#2166ac")
         new_color = QColorDialog.getColor(current_color, self)
         if new_color.isValid():
             button.setStyleSheet(f"background-color: {new_color.name()}; border-radius: 5px;")
+            button.setProperty("group_color", new_color.name())
+            self._describe_color_button(button, button.property("row") or 0, new_color)
             self._calculate_requirements()
 
     def _generate_series(self) -> None:
@@ -440,8 +451,7 @@ class ConcentrationPlannerPage(QWidget):
         concentrations = []
         for row in range(self.table.rowCount()):
             color_button = self.table.cellWidget(row, 5)
-            style = color_button.styleSheet()
-            color_hex = style.split("background-color: ")[1].split(";")[0]
+            color_hex = color_button.property("group_color") or "#2166ac"
 
             display_type = self.table.item(row, 1).text()
             internal_type = self.REVERSE_TYPE_MAP.get(display_type, display_type)

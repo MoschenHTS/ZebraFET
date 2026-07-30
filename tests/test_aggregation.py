@@ -37,7 +37,7 @@ def manager(tmp_path):
 
     # Assign wells: A1-A5 → substrate, B1-B3 → control
     layout = {
-        "0": {
+        "1": {
             "A1": CONC_ID, "A2": CONC_ID, "A3": CONC_ID,
             "A4": CONC_ID, "A5": CONC_ID,
             "B1": CTRL_ID, "B2": CTRL_ID, "B3": CTRL_ID,
@@ -50,7 +50,7 @@ def manager(tmp_path):
 
 def _save(manager, well_id, status, sublethal=None):
     manager.save_well_data(
-        day=1, plate_index=0, well_id=well_id,
+        day=1, plate_index=1, well_id=well_id,
         status=status,
         sublethal_conditions=sublethal or [],
         lethal_conditions=[],
@@ -84,13 +84,40 @@ class TestAggregationCounts:
         assert results[CONC_ID]["dead"] == 1
         assert results[CONC_ID]["live"] == 0
 
-    def test_absent_counts_toward_total_only(self, manager):
-        """Absent wells count toward total but not live or dead."""
+    def test_all_absent_group_unchanged(self, manager):
+        """A group with no non-absent wells has no majority, so an absent well
+        stays absent: counted toward total only, never live or dead."""
         _save(manager, "A1", STATUS_ABSENT)
         results = manager.get_results_data(1)
         assert results[CONC_ID]["total"] == 1
         assert results[CONC_ID]["live"] == 0
         assert results[CONC_ID]["dead"] == 0
+
+    def test_absent_imputed_to_group_majority(self, manager):
+        """An absent well is imputed to the majority status of its group and
+        counted under that status (3 Dead + 1 Live + 1 Absent -> dead=4)."""
+        _save(manager, "A1", STATUS_DEAD_EMBRYO)
+        _save(manager, "A2", STATUS_DEAD_EMBRYO)
+        _save(manager, "A3", STATUS_DEAD_EMBRYO)
+        _save(manager, "A4", STATUS_LIVE_EMBRYO)
+        _save(manager, "A5", STATUS_ABSENT)
+        results = manager.get_results_data(1)
+        assert results[CONC_ID]["dead"] == 4
+        assert results[CONC_ID]["live"] == 1
+        assert results[CONC_ID]["total"] == 5
+
+    def test_absent_majority_tie_favours_live(self, manager):
+        """On a majority tie the conservative priority order wins (Live Embryo
+        first), so 2 Dead + 2 Live + 1 Absent -> absent becomes live."""
+        _save(manager, "A1", STATUS_DEAD_EMBRYO)
+        _save(manager, "A2", STATUS_DEAD_EMBRYO)
+        _save(manager, "A3", STATUS_LIVE_EMBRYO)
+        _save(manager, "A4", STATUS_LIVE_EMBRYO)
+        _save(manager, "A5", STATUS_ABSENT)
+        results = manager.get_results_data(1)
+        assert results[CONC_ID]["dead"] == 2
+        assert results[CONC_ID]["live"] == 3
+        assert results[CONC_ID]["total"] == 5
 
     def test_known_mix_3_dead_5_live_2_hatched(self, manager):
         """
@@ -145,7 +172,7 @@ class TestAggregationCounts:
     def test_well_not_in_layout_ignored(self, manager):
         """Observations for wells not in the plate layout are silently ignored."""
         manager.save_well_data(
-            day=1, plate_index=0, well_id="Z99",  # not in layout
+            day=1, plate_index=1, well_id="Z99",  # not in layout
             status=STATUS_DEAD_EMBRYO,
             sublethal_conditions=[], lethal_conditions=[], notes="",
         )

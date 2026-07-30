@@ -23,7 +23,7 @@ jobs:
           python-version: '3.10'
           cache: pip
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest
+        run: pip install -r requirements.txt -e ".[dev]"
       - name: Run test suite
         run: pytest tests/ -v
 
@@ -33,17 +33,23 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          # Pinned, not -latest: the label moves between macOS majors and would
+          # silently raise the deployment floor of the shipped .pkg.
+          - os: macos-15
             label: macOS
             artifact_name: ZebraFET-macOS.pkg
             artifact_path: dist/ZebraFET-macOS.pkg
 
-          - os: windows-latest
+          - os: windows-2025
             label: Windows
             artifact_name: ZebraFET-setup.exe
             artifact_path: dist/ZebraFET-setup.exe
 
-          - os: ubuntu-latest
+          # Oldest supported Ubuntu runner on purpose: the AppImage inherits the
+          # build host's glibc as its floor. Built on 24.04 it needs glibc 2.39
+          # and will not start on Ubuntu 22.04, which Qt itself still supports.
+          # 22.04 gives glibc 2.35.
+          - os: ubuntu-22.04
             label: Linux
             artifact_name: ZebraFET-x86_64.AppImage
             artifact_path: dist/ZebraFET-x86_64.AppImage
@@ -146,12 +152,41 @@ jobs:
 
             ## What's New
 
-            - Well statuses now carry forward when you finalize a day rather than on every keystroke, avoiding partially-propagated data while you are still editing.
-            - Days must now be finalized in order, and reopening a day cascades to later days while preserving everything you entered by hand.
-            - Consistent, colorblind-safe colour palette across all charts.
-            - Bug fixes and stability improvements.
+            **Statistics**
+            - LC50 time-series: the LC50 refitted at every daily timepoint, so potency can be read against exposure duration rather than at one time only.
+            - Trimmed Spearman-Karber LC50, a distribution-free estimate reported alongside the fitted one — and in its place when the curve does not converge.
+            - Holm-Bonferroni is now the default NOEC/LOEC correction; it controls the same family-wise error rate as Bonferroni while detecting effects Bonferroni can miss. Bonferroni remains selectable for protocols that specify it.
+            - Sublethal (teratogenic) endpoint analysis: each morphological endpoint tested against the control with false-discovery-rate control, plus a sublethal NOEC/LOEC.
+            - Teratogenic Index (LC50 / malformation EC50) to separate selective developmental toxicity from general lethality.
+            - Odds ratios and Wilson score 95% confidence intervals on all group proportions, shown as error bars and reported in tables.
+            - Choose the reference control — pooled, negative only, or solvent only. The negative and solvent controls are tested against each other on every analysis and the result is shown next to the selector.
+            - Groups are weighted by their binomial variance, so a concentration scored in few embryos no longer pulls the curve as hard as one scored in many.
+
+            **Recording and reporting**
+            - Undo and redo for well scoring and plate layout changes.
+            - Export the completed analysis as CSV tables — per-group summary, endpoints, sublethal tests, effect sizes and the LC50 time-series — ready for a statistics package or a manuscript table.
+            - Choose which sections the Word report includes.
+            - Per-day water-quality log (temperature, dissolved oxygen, pH, conductivity) with OECD TG 236 checks.
+            - Three new figures: mortality time-course, fate composition and the LC50 time-series.
+            - Export any figure as PNG, SVG or PDF at 600 dpi, or copy it to the clipboard.
+            - Model, Abbott's correction and reference control are now saved with the project instead of resetting each session.
+
+            **OECD TG 236 conformance**
+            - Test validity is now assessed against every §9 criterion the recorded data supports: batch fertilization rate (≥ 70%), control survival, control hatching rate (≥ 80%), positive-control sensitivity (≥ 30%), temperature and dissolved oxygen. Previously an unqualified verdict was drawn from control mortality alone, which passed tests failing on other criteria.
+            - New fields for the batch fertilization rate and the test species, both required by the §42 report contents. Existing projects gain them automatically on first open; the fertilization rate is optional and blank simply omits the criterion.
+            - The report states the highest concentration causing no mortality and the lowest causing 100% mortality (§42), in the document and in the CSV export.
+            - Plates whose internal dilution-water control lost more than one embryo are flagged against §23. Nothing is excluded — the report names the plate and states what rejecting it would cost, leaving the decision to the operator.
+
+            **Corrections**
+            - The LC50 was previously taken from the fitted curve's inflection point. For a curve with a free upper asymptote that quantity is the relative EC50, not the concentration lethal to half the embryos, and the two can differ substantially — by 18.9% on one of the validation datasets. The LC50 is now obtained by inverting the curve for 50% absolute mortality, and reported as not reached where the curve never crosses 50%. Fits with both asymptotes fixed at 0 and 100% are unaffected, and the estimate is now checked against the R package drc 3.0.1 in the test suite.
+            - The Teratogenic Index threshold for selective developmental toxicity is TI ≥ 2 rather than TI ≥ 1, following Selderslaghs et al.
+            - Trimmed Spearman-Karber interpolates the trimmed range and carries the (1 − 2a)⁻² variance factor introduced by trimming, per Hamilton et al.; intervals were previously reported too narrow.
+            - Mortality is calculated over the embryos actually scored rather than the wells assigned.
+            - Further correctness fixes across the analysis, the figures and the report.
 
             ### Upgrading
             Download and run the installer for your platform. Your existing projects and settings are preserved — projects from earlier versions migrate automatically on first open.
+
+            Note: because of the corrections above, re-analysing a project created under 2.1.x may produce different values. Where a model with a free upper asymptote was selected, the LC50 in particular may change by more than a rounding margin.
           files: installers/**/*
           fail_on_unmatched_files: true

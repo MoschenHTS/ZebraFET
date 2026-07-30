@@ -7,11 +7,13 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, Q
                              QGridLayout, QComboBox, QDoubleSpinBox, QMessageBox,
                              QGroupBox, QColorDialog, QCheckBox, QScrollArea, QSpinBox,
                              QSizePolicy, QTextEdit)
-from PySide6.QtCore import Qt, Signal, QLocale, QPropertyAnimation, QEasingCurve, QDate
-from PySide6.QtGui import QColor, QIntValidator, QBrush, QIcon
+from PySide6.QtCore import Qt, Signal, QLocale, QDate
+from PySide6.QtGui import QColor, QIntValidator, QBrush
 
-from src.ui.components import FloatingLabelLineEdit, FlexibleDoubleValidator, PlateFormatSelector
+from src.ui.components import (FloatingLabelLineEdit, FlexibleDoubleValidator,
+                               PlateFormatSelector, CollapsibleSection)
 from src.core.utils import resource_path
+from src.core.constants import DEFAULT_SPECIES
 
 class ProjectCreationPage(QWidget):
     """
@@ -81,42 +83,52 @@ class ProjectCreationPage(QWidget):
         # Metadata Group 
         meta_group = QGroupBox("Project Metadata"); meta_layout = QVBoxLayout(meta_group)
         self.name_input = FloatingLabelLineEdit("Project Name"); self.name_input.setObjectName("name_input")
+        self.name_input.setToolTip("The official name of the research project.")
         self.name_error_label = QLabel(); self.name_error_label.setObjectName("ErrorLabel")
         self.user_input = FloatingLabelLineEdit("Main Researcher"); self.user_input.setObjectName("user_input")
+        self.user_input.setToolTip("Name of the researcher responsible for the experiment.")
         self.user_error_label = QLabel(); self.user_error_label.setObjectName("ErrorLabel")
         self.substance_input = FloatingLabelLineEdit("Substance"); self.substance_input.setObjectName("substance_input")
+        self.substance_input.setToolTip("Common name of the test substance.")
         self.substance_error_label = QLabel(); self.substance_error_label.setObjectName("ErrorLabel")
         self.conc_unit_input = FloatingLabelLineEdit("Concentration Unit (e.g., mg/L)")
+        self.conc_unit_input.setToolTip("The unit for concentration values (e.g., mg/L, µM).")
         
         meta_layout.addWidget(self.name_input); meta_layout.addWidget(self.name_error_label)
         meta_layout.addWidget(self.user_input); meta_layout.addWidget(self.user_error_label)
         meta_layout.addWidget(self.substance_input); meta_layout.addWidget(self.substance_error_label)
         meta_layout.addWidget(self.conc_unit_input)
 
-        # Substance Details Panel (Collapsible) 
-        self.toggle_substance_btn = self._create_toggle_button("Substance Details")
-        self.substance_details_panel = self._create_substance_details_panel()
-        self.toggle_substance_btn.clicked.connect(lambda: self._toggle_panel(self.toggle_substance_btn, self.substance_details_panel))
-        meta_layout.addWidget(self.toggle_substance_btn, 0, Qt.AlignLeft)
-        meta_layout.addWidget(self.substance_details_panel)
+        # Substance Details Section (Collapsible) 
+        self.substance_section = CollapsibleSection("Substance Details")
+        self.substance_section.setContentLayout(self._create_substance_details_panel())
+        meta_layout.addWidget(self.substance_section)
 
-        # Test Conditions Panel (Collapsible) 
-        self.toggle_conditions_btn = self._create_toggle_button("Water Quality & Conditions")
-        self.conditions_panel = self._create_conditions_panel()
-        self.toggle_conditions_btn.clicked.connect(lambda: self._toggle_panel(self.toggle_conditions_btn, self.conditions_panel))
-        meta_layout.addWidget(self.toggle_conditions_btn, 0, Qt.AlignLeft)
-        meta_layout.addWidget(self.conditions_panel)
+        # Test Conditions Section (Collapsible)
+        self.conditions_section = CollapsibleSection("Water Quality & Conditions")
+        self.conditions_section.setContentLayout(self._create_conditions_panel())
+        meta_layout.addWidget(self.conditions_section)
+
+        # Test Organisms Section (Collapsible)
+        self.organisms_section = CollapsibleSection("Test Organisms")
+        self.organisms_section.setContentLayout(self._create_organisms_panel())
+        meta_layout.addWidget(self.organisms_section)
 
         self.days_input = FloatingLabelLineEdit("Number of Days"); self.days_input.setObjectName("days_input"); self.days_input.setValidator(QIntValidator(1, 365, self)); self.days_input.setText("4")
+        self.days_input.setToolTip("Total duration of the experiment in days. OECD TG 236 specifies 96 h, which is four days.")
         self.days_error_label = QLabel(); self.days_error_label.setObjectName("ErrorLabel")
         meta_layout.addWidget(self.days_input); meta_layout.addWidget(self.days_error_label)
 
         # Groups Definition 
         group_box = QGroupBox("Define Groups"); grid = QGridLayout(group_box); grid.setSpacing(15)
         self.controls_spin = FloatingLabelLineEdit("Controls (Co)"); self.controls_spin.setValidator(QIntValidator(1, 10, self)); self.controls_spin.setText("1")
+        self.controls_spin.setToolTip("Negative control groups — dilution water only. OECD TG 236 validity is judged against these.")
         self.concentrations_spin = FloatingLabelLineEdit("Concentrations (C)"); self.concentrations_spin.setValidator(QIntValidator(1, 20, self)); self.concentrations_spin.setText("5")
+        self.concentrations_spin.setToolTip("Test substance concentrations in the dilution series.")
         self.solvents_spin = FloatingLabelLineEdit("Solvent Controls (SC)"); self.solvents_spin.setValidator(QIntValidator(0, 10, self)); self.solvents_spin.setText("1")
+        self.solvents_spin.setToolTip("Solvent control groups. Required whenever a carrier solvent is used.")
         self.positive_controls_spin = FloatingLabelLineEdit("Positive Controls (PC)"); self.positive_controls_spin.setValidator(QIntValidator(0, 10, self)); self.positive_controls_spin.setText("1")
+        self.positive_controls_spin.setToolTip("Positive control groups. OECD TG 236 asks for 4 mg/L 3,4-dichloroaniline at least twice a year.")
 
         grid.addWidget(self.controls_spin, 0, 0, 1, 2); grid.addWidget(self.concentrations_spin, 1, 0, 1, 2)
         grid.addWidget(self.solvents_spin, 2, 0, 1, 2); grid.addWidget(self.positive_controls_spin, 3, 0, 1, 2)
@@ -129,7 +141,9 @@ class ProjectCreationPage(QWidget):
         # Serial Dilution Calculator 
         calc_box = QGroupBox("Serial Dilution Calculator"); grid_calc = QGridLayout(calc_box); grid_calc.setSpacing(15)
         self.factor_spin = FloatingLabelLineEdit("Dilution Factor"); self.factor_spin.setObjectName("factor_spin"); self.factor_spin.setValidator(FlexibleDoubleValidator(1.01, 100.0, 2, self)); self.factor_spin.setText("2.2")
+        self.factor_spin.setToolTip("Ratio between successive concentrations. OECD TG 236 asks for a separation factor no greater than 2.2.")
         self.highest_conc_spin = FloatingLabelLineEdit("Highest Concentration"); self.highest_conc_spin.setObjectName("highest_conc_spin"); self.highest_conc_spin.setValidator(FlexibleDoubleValidator(0.0001, 10000.0, 4, self)); self.highest_conc_spin.setText("100.0")
+        self.highest_conc_spin.setToolTip("Top of the dilution series. Generate Series fills the table downward from here.")
         generate_btn = QPushButton("Generate Series"); generate_btn.clicked.connect(self._generate_series)
         grid_calc.addWidget(self.factor_spin, 0, 0, 1, 2); grid_calc.addWidget(self.highest_conc_spin, 1, 0, 1, 2); grid_calc.addWidget(generate_btn, 2, 0, 1, 2)
 
@@ -139,9 +153,11 @@ class ProjectCreationPage(QWidget):
         self.plate_format_selector = PlateFormatSelector()
         self.plate_format_selector.format_changed.connect(self._on_format_changed)
         self.replicates_spin = FloatingLabelLineEdit("Replicates per Group"); self.replicates_spin.setObjectName("replicates_spin"); self.replicates_spin.setValidator(QIntValidator(1, 100, self)); self.replicates_spin.setText(str(self.DEFAULT_REPLICATES))
+        self.replicates_spin.setToolTip("Wells per group. OECD TG 236 requires 20 embryos per test concentration and 20 in the control.")
         self.replicates_spin.line_edit.textChanged.connect(self._calculate_requirements)
         self.replicates_error_label = QLabel(); self.replicates_error_label.setObjectName("ErrorLabel")
         self.num_plates_spin = FloatingLabelLineEdit("Number of Plates"); self.num_plates_spin.setObjectName("num_plates_spin"); self.num_plates_spin.setValidator(QIntValidator(1, 100, self)); self.num_plates_spin.setText("1")
+        self.num_plates_spin.setToolTip("Plates the plan will be laid out across. Must be at least the minimum shown below.")
         self.num_plates_spin.line_edit.textChanged.connect(self._update_badge_status)
         self.num_plates_error_label = QLabel(); self.num_plates_error_label.setObjectName("ErrorLabel")
         self.plate_badge = QLabel("✓ OK"); self.plate_badge.setObjectName("PlateBadge"); self.plate_badge.setProperty("status", "ok")
@@ -164,29 +180,30 @@ class ProjectCreationPage(QWidget):
         
         self._on_positive_controls_changed()
 
-    def _create_toggle_button(self, text: str) -> QPushButton:
-        """Helper to create a consistent toggle button for collapsible panels."""
-        button = QPushButton(text)
-        button.setObjectName("LinkButton")
-        button.setCheckable(True)
-        button.setIcon(QIcon(resource_path("resources/icons/chevron-down-dark.svg")))
-        return button
-
     def _create_substance_details_panel(self) -> QFrame:
         """Creates the collapsible panel for advanced substance details."""
         panel = QFrame()
         layout = QGridLayout(panel)
         layout.setContentsMargins(10, 10, 0, 10)
         self.cas_input = FloatingLabelLineEdit("CAS Number")
+        self.cas_input.setToolTip("CAS Registry Number of the substance.")
         self.mw_input = FloatingLabelLineEdit("Molecular Weight")
+        self.mw_input.setToolTip("Molecular Weight (e.g., g/mol).")
         self.purity_input = FloatingLabelLineEdit("Purity (%)")
+        self.purity_input.setToolTip("Purity of the substance in percent.")
         self.purity_input.setValidator(FlexibleDoubleValidator(0, 100.0, 2, self))
         self.supplier_input = FloatingLabelLineEdit("Supplier/Manufacturer")
+        self.supplier_input.setToolTip("Supplier or manufacturer of the substance.")
         self.appearance_input = FloatingLabelLineEdit("Physical Appearance")
+        self.appearance_input.setToolTip("Physical appearance of the substance (e.g., 'White crystalline powder').")
         self.solubility_input = FloatingLabelLineEdit("Water Solubility")
+        self.solubility_input.setToolTip("Solubility in water (e.g., '10 mg/L at 20°C').")
         self.iupac_input = FloatingLabelLineEdit("IUPAC Name")
+        self.iupac_input.setToolTip("IUPAC name or other unique chemical identifier (SMILES, InChI).")
         self.solvent_used_input = FloatingLabelLineEdit("Solvent Used (if any)")
+        self.solvent_used_input.setToolTip("Name and justification for the solvent used, if any.")
         self.positive_control_substance_input = FloatingLabelLineEdit("Positive Control Substance")
+        self.positive_control_substance_input.setToolTip("The substance used as a positive control (e.g., 3,4-dichloroaniline).")
         
         layout.addWidget(self.appearance_input, 0, 0); layout.addWidget(self.solubility_input, 0, 1)
         layout.addWidget(self.iupac_input, 1, 0); layout.addWidget(self.cas_input, 1, 1)
@@ -194,7 +211,6 @@ class ProjectCreationPage(QWidget):
         layout.addWidget(self.supplier_input, 3, 0); layout.addWidget(self.solvent_used_input, 3, 1)
         layout.addWidget(self.positive_control_substance_input, 4, 0, 1, 2)
         
-        panel.setMaximumHeight(0)
         return panel
 
     def _create_conditions_panel(self) -> QFrame:
@@ -203,34 +219,51 @@ class ProjectCreationPage(QWidget):
         layout = QGridLayout(panel)
         layout.setContentsMargins(10, 10, 0, 10)
         self.water_type_combo = QComboBox(); self.water_type_combo.addItems(["Reconstituted (ISO)", "Deionized", "Natural Surface Water"])
+        self.water_type_combo.setToolTip("Type of water used for dilution and controls.")
         self.ph_input = FloatingLabelLineEdit("pH")
+        self.ph_input.setToolTip("pH of the dilution water (e.g., '7.5 ± 0.2').")
         self.hardness_input = FloatingLabelLineEdit("Hardness (mg/L CaCO₃)")
+        self.hardness_input.setToolTip("Total hardness of the water, expressed as mg/L CaCO₃.")
         self.conductivity_input = FloatingLabelLineEdit("Conductivity (µS/cm)")
+        self.conductivity_input.setToolTip("Electrical conductivity of the water (e.g., '550 µS/cm').")
         self.temperature_input = FloatingLabelLineEdit("Temperature (°C)")
+        self.temperature_input.setToolTip("Temperature range of the test medium (e.g., '26 ± 1 °C').")
         self.oxygen_input = FloatingLabelLineEdit("Dissolved Oxygen")
+        self.oxygen_input.setToolTip("Dissolved oxygen concentration (e.g., '> 60% saturation').")
         self.photoperiod_input = FloatingLabelLineEdit("Photoperiod (L:D)")
+        self.fertilization_input = FloatingLabelLineEdit("Batch Fertilization Rate (%)")
+        self.fertilization_input.setToolTip("Overall fertilization rate of the egg batch, scored before plating (e.g., '88 %'). OECD TG 236 requires ≥ 70%. Leave blank if not recorded.")
         layout.addWidget(QLabel("Water Type:"), 0, 0, alignment=Qt.AlignRight); layout.addWidget(self.water_type_combo, 0, 1)
         layout.addWidget(self.ph_input, 1, 0); layout.addWidget(self.hardness_input, 1, 1)
         layout.addWidget(self.conductivity_input, 2, 0); layout.addWidget(self.temperature_input, 2, 1)
         layout.addWidget(self.oxygen_input, 3, 0); layout.addWidget(self.photoperiod_input, 3, 1)
-        panel.setMaximumHeight(0)
+        layout.addWidget(self.fertilization_input, 4, 0, 1, 2)
         return panel
 
-    def _toggle_panel(self, button: QPushButton, panel: QFrame) -> None:
-        """Generic method to expand/collapse a panel with animation."""
-        is_expanding = button.isChecked()
-        button.setIcon(QIcon(resource_path(
-            "resources/icons/chevron-up-dark.svg" if is_expanding else "resources/icons/chevron-down-dark.svg"
-        )))
-        start_height = panel.height()
-        end_height = panel.sizeHint().height() if is_expanding else 0
-        self.animation = QPropertyAnimation(panel, b"maximumHeight")
-        self.animation.setDuration(300)
-        self.animation.setStartValue(start_height)
-        self.animation.setEndValue(end_height)
-        self.animation.setEasingCurve(QEasingCurve.InOutCubic)
-        self.animation.start()
-        
+    def _create_organisms_panel(self) -> QFrame:
+        """Creates the collapsible panel for the test organisms.
+
+        Without this the species was fixed at creation and a project quietly
+        defaulted to Danio rerio, leaving the operator to discover Project
+        Settings before the report named the right animal.
+        """
+        panel = QFrame()
+        layout = QGridLayout(panel)
+        layout.setContentsMargins(10, 10, 0, 10)
+        self.species_input = FloatingLabelLineEdit("Species")
+        self.species_input.setText(DEFAULT_SPECIES)
+        self.species_input.setToolTip(
+            "Scientific name of the test species. OECD TG 236 is written for "
+            "Danio rerio; change this only if the test uses another species."
+        )
+        self.strain_input = FloatingLabelLineEdit("Strain")
+        self.strain_input.setToolTip("Strain of the zebrafish used (e.g., 'Wild-type AB/Tübingen').")
+        self.source_input = FloatingLabelLineEdit("Source of Brood Stock")
+        self.source_input.setToolTip("Source of the brood stock (e.g., 'Zebrafish International Resource Center').")
+        layout.addWidget(self.species_input, 0, 0); layout.addWidget(self.strain_input, 0, 1)
+        layout.addWidget(self.source_input, 1, 0, 1, 2)
+        return panel
+
     def _on_positive_controls_changed(self):
         """Shows or hides the positive control substance input based on count."""
         num_positive = self._safe_get_int(self.positive_controls_spin, 0)
@@ -343,7 +376,12 @@ class ProjectCreationPage(QWidget):
             color_index = row - self._safe_get_int(self.controls_spin)
             color = QColor(self.COLOR_POOL["substrate"][color_index % len(self.COLOR_POOL["substrate"])])
             
-        color_button.setStyleSheet(f"background-color: {color.name()}; border-radius: 5px;"); color_button.setProperty("row", row); self.table.setCellWidget(row, 5, color_button)
+        color_button.setStyleSheet(f"background-color: {color.name()}; border-radius: 5px;")
+        color_button.setProperty("group_color", color.name()); color_button.setProperty("row", row)
+        # A bare swatch has no text or icon to announce, and the color it shows is
+        # the only thing identifying the group on the plate.
+        self._describe_color_button(color_button, row, color)
+        self.table.setCellWidget(row, 5, color_button)
         if data:
             type_label.setText(data.get("type", item_type))
             conc_spinbox.setValue(data.get("value", 0.0))
@@ -357,10 +395,20 @@ class ProjectCreationPage(QWidget):
             color_button.clicked.connect(self._open_color_picker)
         ])
 
+    def _describe_color_button(self, button: QPushButton, row: int, color: QColor) -> None:
+        """Give a bare color swatch a name and a tooltip naming its group."""
+        item = self.table.item(row, 0)
+        group_id = item.text() if item else f"row {row + 1}"
+        button.setAccessibleName(f"Color for group {group_id}")
+        button.setToolTip(f"Group {group_id} — {color.name()}. Click to choose another color.")
+
     def _open_color_picker(self) -> None:
         """Opens a color dialog to change the color of a group label."""
-        button = self.sender(); row = button.property("row"); style = button.styleSheet(); current_color_hex = style.split("background-color: ")[1].split(";")[0]; current_color = QColor(current_color_hex); new_color = QColorDialog.getColor(current_color, self)
-        if new_color.isValid(): button.setStyleSheet(f"background-color: {new_color.name()}; border-radius: 5px;")
+        button = self.sender(); current_color = QColor(button.property("group_color") or "#2166ac"); new_color = QColorDialog.getColor(current_color, self)
+        if new_color.isValid():
+            button.setStyleSheet(f"background-color: {new_color.name()}; border-radius: 5px;")
+            button.setProperty("group_color", new_color.name())
+            self._describe_color_button(button, button.property("row") or 0, new_color)
 
     def _generate_series(self) -> None:
         """Calculates and applies a serial dilution to the substrate groups."""
@@ -438,12 +486,23 @@ class ProjectCreationPage(QWidget):
         self.plate_badge.style().unpolish(self.plate_badge); self.plate_badge.style().polish(self.plate_badge)
 
     def _validate_table_ids(self) -> None:
-        """Checks for and visually flags duplicate IDs in the table."""
+        """Checks for and visually flags duplicate IDs in the table.
+
+        The red fill is paired with a tooltip because the fill alone leaves a
+        color-blind reader with no way to tell which row is the problem.
+        """
         ids = [self.table.item(row, 0).text() for row in range(self.table.rowCount())]; id_counts = Counter(ids)
         for row in range(self.table.rowCount()):
             item = self.table.item(row, 0)
-            if id_counts[item.text()] > 1: item.setBackground(QBrush(QColor("#9b212a")))
-            else: item.setBackground(QBrush(Qt.transparent))
+            if id_counts[item.text()] > 1:
+                item.setBackground(QBrush(QColor("#9b212a")))
+                item.setToolTip(
+                    f"Duplicate group ID: '{item.text()}' is used by "
+                    f"{id_counts[item.text()]} rows. Each group needs its own ID."
+                )
+            else:
+                item.setBackground(QBrush(Qt.transparent))
+                item.setToolTip("")
 
     def _set_field_validity(self, widget: QWidget, is_valid: bool, message: str = "") -> None:
         """
@@ -480,6 +539,16 @@ class ProjectCreationPage(QWidget):
             
         return is_valid
 
+    def _row_color(self, row: int) -> str:
+        """Group color for a row, read from the widget rather than its stylesheet.
+
+        Parsing it back out of the stylesheet text broke on any theme rule that
+        restyled the button, and did so at the moment the project was created.
+        """
+        widget = self.table.cellWidget(row, 5)
+        color = widget.property("group_color") if widget else None
+        return color or "#2166ac"
+
     def _finalize_project(self) -> None:
         """
         Gathers all data, validates it, and emits the `project_created`
@@ -500,7 +569,8 @@ class ProjectCreationPage(QWidget):
             "water_type": self.water_type_combo.currentText(), "ph": self.ph_input.text(),
             "hardness": self.hardness_input.text(), "conductivity": self.conductivity_input.text(),
             "temperature": self.temperature_input.text(), "dissolved_oxygen": self.oxygen_input.text(),
-            "photoperiod": self.photoperiod_input.text()
+            "photoperiod": self.photoperiod_input.text(),
+            "fertilization_rate": self.fertilization_input.text()
         }
         
         concentrations = []
@@ -512,7 +582,7 @@ class ProjectCreationPage(QWidget):
                 "replicates": self._safe_get_int(self.replicates_spin, 1),
                 "wells": self.table.cellWidget(row, 3).value(),
                 "per_plate": self.table.cellWidget(row, 4).findChild(QCheckBox).isChecked(),
-                "color": self.table.cellWidget(row, 5).styleSheet().split("background-color: ")[1].split(";")[0]
+                "color": self._row_color(row)
             }
             concentrations.append(conc_data)
             
@@ -534,7 +604,11 @@ class ProjectCreationPage(QWidget):
                 "required_plates": self.min_plates_required
             },
             "start_date": QDate.currentDate().toString(Qt.ISODate),
-            "test_organisms": {},
+            "test_organisms": {
+                "species": self.species_input.text().strip() or DEFAULT_SPECIES,
+                "strain": self.strain_input.text().strip(),
+                "source": self.source_input.text().strip(),
+            },
             "methodology": {},
             "report_notes": ""
         }

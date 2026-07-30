@@ -3,19 +3,37 @@ import logging
 import os
 import random
 import sqlite3
+import threading
 import time
 import uuid
 from typing import Any, Dict, List, Optional
 
 from src.database.schema import initialize_project_db
 from src.database.migrations import MigrationRunner
-from src.core.constants import LIVE_STATUSES as _LIVE_STATUSES, DEAD_STATUSES as _DEAD_STATUSES
+from src.core.constants import (
+    LIVE_STATUSES as _LIVE_STATUSES,
+    DEAD_STATUSES as _DEAD_STATUSES,
+    STATUS_ABSENT,
+)
 
 log = logging.getLogger(__name__)
 
 # Subdirectory names inside each project folder
 PHOTOS_SUBDIR = "photos"
 REPORTS_SUBDIR = "reports"
+
+
+def normalize_rel_path(path: str) -> str:
+    """Canonical form of a project-relative path: forward slashes throughout.
+
+    well_photos.relative_path is matched by equality, so the separator has to be
+    identical at write and at lookup. os.path.join yields backslashes on Windows
+    while lookups normalized to forward slashes, which meant a photo added on
+    Windows could never be found again to remove it. Projects are also exchanged
+    across platforms via .zfet archives, so the stored form has to be one both
+    can produce.
+    """
+    return path.replace("\\", "/")
 
 
 class ProjectManager:
@@ -40,11 +58,21 @@ class ProjectManager:
         self._project_name = os.path.basename(project_dir_path)
         self.db_path = os.path.join(project_dir_path, f"{self._project_name}.db")
 
-        self._conn = self._open_connection()
+        # One connection per thread. A single shared connection carries a single
+        # transaction, so a read issued from the thread pool while the GUI thread
+        # sat inside `with self._conn:` observed that transaction's uncommitted
+        # state, and two threads opening transactions at once would have had the
+        # inner commit end the outer one. Separate connections give each thread
+        # its own transaction scope; SQLite serializes them at the file level.
+        self._local = threading.local()
+        self._connections: List[sqlite3.Connection] = []
+        self._connections_lock = threading.Lock()
+        self._cache_lock = threading.Lock()
         self._conc_map_cache: Optional[Dict[str, Any]] = None
         initialize_project_db(self._conn)
         MigrationRunner(self._conn).run()
         self._ensure_subdirs()
+        self._backfill_legacy_finalized_days()
 
         log.info(f"ProjectManager ready for '{self._project_name}' at {self.db_path}")
 
@@ -76,18 +104,45 @@ class ProjectManager:
         conn.execute("PRAGMA temp_store=MEMORY")
         return conn
 
+    @property
+    def _conn(self) -> sqlite3.Connection:
+        """This thread's connection, opened on first use."""
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = self._open_connection()
+            self._local.conn = conn
+            with self._connections_lock:
+                self._connections.append(conn)
+        return conn
+
     def _ensure_subdirs(self) -> None:
         os.makedirs(os.path.join(self.project_dir, PHOTOS_SUBDIR), exist_ok=True)
         os.makedirs(os.path.join(self.project_dir, REPORTS_SUBDIR), exist_ok=True)
 
+    def checkpoint(self):
+        """Fold the write-ahead log back into the .db file.
+
+        WAL mode keeps recent commits in a sidecar until SQLite decides to fold
+        them in, so a project folder copied mid-session can be missing its most
+        recent observations. Used before export and by the explicit save action.
+
+        Returns the PRAGMA's result row, whose first element is 0 when the
+        checkpoint completed; callers that are about to copy the file check it.
+        """
+        return self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+
     def close(self) -> None:
-        """Close the database connection. Call when done with the project."""
-        try:
-            self._conn.close()
-        except sqlite3.ProgrammingError:
-            pass  # Already closed
-        except Exception as e:
-            log.warning(f"Error closing database connection: {e}")
+        """Close every connection this project opened, across all threads."""
+        with self._connections_lock:
+            connections, self._connections = self._connections, []
+        for conn in connections:
+            try:
+                conn.close()
+            except sqlite3.ProgrammingError:
+                pass  # Already closed
+            except Exception as e:
+                log.warning(f"Error closing database connection: {e}")
+        self._local = threading.local()
 
     def _transact(self, fn, *args, **kwargs):
         """
@@ -195,17 +250,56 @@ class ProjectManager:
         allowed = {
             "water_type", "ph", "hardness", "conductivity", "photoperiod",
             "temperature", "dissolved_oxygen", "acceptable_mortality",
+            "fertilization_rate",
         }
         to_set = {k: v for k, v in fields.items() if k in allowed}
-        if not to_set:
-            return
-        cols = ", ".join(f"{k} = ?" for k in to_set)
+        # The row is created even for an empty payload: project creation passes
+        # whatever the wizard collected, which may be nothing, and returning early
+        # left the singleton missing so the getter reported {} instead of the
+        # schema defaults.
         with self._conn:
             self._conn.execute("INSERT OR IGNORE INTO test_conditions (id) VALUES (1)")
+            if to_set:
+                cols = ", ".join(f"{k} = ?" for k in to_set)
+                self._conn.execute(
+                    f"UPDATE test_conditions SET {cols} WHERE id = 1",
+                    list(to_set.values()),
+                )
+
+    def get_water_quality_log(self) -> Dict[int, Dict[str, Any]]:
+        """Return the per-day water-quality log as {day: {temperature, ...}}."""
+        rows = self._conn.execute(
+            "SELECT * FROM water_quality_log ORDER BY day"
+        ).fetchall()
+        return {int(r["day"]): dict(r) for r in rows}
+
+    def save_water_quality(self, day: int, temperature: str = "", dissolved_oxygen: str = "",
+                           ph: str = "", conductivity: str = "", notes: str = "") -> None:
+        """Upsert the water-quality measurements recorded on *day*."""
+        with self._conn:
             self._conn.execute(
-                f"UPDATE test_conditions SET {cols} WHERE id = 1",
-                list(to_set.values()),
+                """
+                INSERT INTO water_quality_log (day, temperature, dissolved_oxygen, ph, conductivity, notes)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(day) DO UPDATE SET
+                    temperature=excluded.temperature,
+                    dissolved_oxygen=excluded.dissolved_oxygen,
+                    ph=excluded.ph,
+                    conductivity=excluded.conductivity,
+                    notes=excluded.notes
+                """,
+                (day, temperature, dissolved_oxygen, ph, conductivity, notes),
             )
+
+    def delete_water_quality(self, day: int) -> None:
+        """Remove the water-quality row for *day*, if one exists.
+
+        Used when every field has been cleared. An all-blank row is not a
+        measurement: leaving it stored would put an empty line in the report's
+        monitoring table and make the log appear populated.
+        """
+        with self._conn:
+            self._conn.execute("DELETE FROM water_quality_log WHERE day = ?", (day,))
 
     def get_test_organisms(self) -> Dict[str, Any]:
         row = self._conn.execute(
@@ -214,17 +308,16 @@ class ProjectManager:
         return dict(row) if row else {}
 
     def update_test_organisms(self, **fields) -> None:
-        allowed = {"strain", "source", "collection_method"}
+        allowed = {"species", "strain", "source", "collection_method"}
         to_set = {k: v for k, v in fields.items() if k in allowed}
-        if not to_set:
-            return
-        cols = ", ".join(f"{k} = ?" for k in to_set)
         with self._conn:
             self._conn.execute("INSERT OR IGNORE INTO test_organisms (id) VALUES (1)")
-            self._conn.execute(
-                f"UPDATE test_organisms SET {cols} WHERE id = 1",
-                list(to_set.values()),
-            )
+            if to_set:
+                cols = ", ".join(f"{k} = ?" for k in to_set)
+                self._conn.execute(
+                    f"UPDATE test_organisms SET {cols} WHERE id = 1",
+                    list(to_set.values()),
+                )
 
     def get_methodology(self) -> Dict[str, Any]:
         row = self._conn.execute(
@@ -235,13 +328,60 @@ class ProjectManager:
     def update_methodology(self, **fields) -> None:
         allowed = {"test_procedure", "solution_preparation", "selection_criteria"}
         to_set = {k: v for k, v in fields.items() if k in allowed}
-        if not to_set:
-            return
-        cols = ", ".join(f"{k} = ?" for k in to_set)
         with self._conn:
             self._conn.execute("INSERT OR IGNORE INTO methodology (id) VALUES (1)")
+            if to_set:
+                cols = ", ".join(f"{k} = ?" for k in to_set)
+                self._conn.execute(
+                    f"UPDATE methodology SET {cols} WHERE id = 1",
+                    list(to_set.values()),
+                )
+
+    # ------------------------------------------------------------------
+    # Analysis settings
+    # ------------------------------------------------------------------
+
+    #: Columns the UI is allowed to persist, with the defaults applied when a
+    #: project has never had its analysis settings saved.
+    ANALYSIS_SETTING_DEFAULTS: Dict[str, Any] = {
+        "model_mode": "LL4",
+        "bottom": 0.0,
+        "top": 100.0,
+        "abbott": 0,
+        "control_mode": "pooled",
+        "noec_correction": "holm",
+    }
+
+    def get_analysis_settings(self) -> Dict[str, Any]:
+        """Persisted curve-fitting and reference-control choices for this project.
+
+        Returns the defaults when the project has never saved any, so callers
+        never have to distinguish "unset" from "explicitly default".
+        """
+        row = self._conn.execute(
+            "SELECT * FROM analysis_settings WHERE id = 1"
+        ).fetchone()
+        settings = dict(self.ANALYSIS_SETTING_DEFAULTS)
+        if row:
+            stored = dict(row)
+            stored.pop("id", None)
+            settings.update({k: v for k, v in stored.items() if v is not None})
+        settings["abbott"] = bool(settings["abbott"])
+        return settings
+
+    def save_analysis_settings(self, **fields) -> None:
+        """Upsert the analysis settings. Unknown keys are ignored."""
+        to_set = {k: v for k, v in fields.items()
+                  if k in self.ANALYSIS_SETTING_DEFAULTS}
+        if not to_set:
+            return
+        if "abbott" in to_set:
+            to_set["abbott"] = int(bool(to_set["abbott"]))
+        cols = ", ".join(f"{k} = ?" for k in to_set)
+        with self._conn:
+            self._conn.execute("INSERT OR IGNORE INTO analysis_settings (id) VALUES (1)")
             self._conn.execute(
-                f"UPDATE methodology SET {cols} WHERE id = 1",
+                f"UPDATE analysis_settings SET {cols} WHERE id = 1",
                 list(to_set.values()),
             )
 
@@ -261,9 +401,16 @@ class ProjectManager:
         return result
 
     def get_concentration_map(self) -> Dict[str, Dict[str, Any]]:
-        if self._conc_map_cache is None:
-            self._conc_map_cache = {c["id"]: c for c in self.get_concentrations()}
-        return self._conc_map_cache
+        # Read from any thread, so the fill is guarded; the query runs outside the
+        # lock because it goes to this thread's own connection.
+        cached = self._conc_map_cache
+        if cached is not None:
+            return cached
+        built = {c["id"]: c for c in self.get_concentrations()}
+        with self._cache_lock:
+            if self._conc_map_cache is None:
+                self._conc_map_cache = built
+            return self._conc_map_cache
 
     def set_concentrations(
         self,
@@ -532,19 +679,41 @@ class ProjectManager:
             (day,),
         ).fetchall()
 
-        for r in rows:
-            cid = r["conc_id"]
-            if cid not in results:
-                continue
-            results[cid]["total"] += 1
-            status = r["status"]
-            if status in _LIVE_STATUSES:
-                results[cid]["live"] += 1
-            elif status in _DEAD_STATUSES:
-                results[cid]["dead"] += 1
-            # "Absent (use majority)" counts toward total but not live/dead
-            if r["sublethal_count"] > 0:
-                results[cid]["malformed"] += 1
+        # Impute "Absent (use majority)" wells to the majority status of their
+        # concentration group (same rule the analysis pipeline applies via
+        # results_analysis_widget), so absent wells are counted identically here.
+        import pandas as pd
+        from src.core.biostatistics import impute_absent_as_majority
+
+        records = [
+            {
+                "day": day,
+                "conc_id": r["conc_id"],
+                "status": r["status"],
+                "sublethal_count": r["sublethal_count"],
+            }
+            for r in rows
+            if r["conc_id"] in results
+        ]
+        if not records:
+            return results
+
+        df = pd.DataFrame(records)
+        # Two-column group_cols mirrors the production call site so the groupby
+        # key shape matches the function's internal tuple() lookup.
+        df = impute_absent_as_majority(df, STATUS_ABSENT, group_cols=("day", "conc_id"))
+
+        for row in df.itertuples(index=False):
+            bucket = results[row.conc_id]
+            bucket["total"] += 1
+            if row.status in _LIVE_STATUSES:
+                bucket["live"] += 1
+            elif row.status in _DEAD_STATUSES:
+                bucket["dead"] += 1
+            # An all-absent group has no majority, so absent stays absent and
+            # contributes to total only.
+            if row.sublethal_count > 0:
+                bucket["malformed"] += 1
 
         return results
 
@@ -567,14 +736,16 @@ class ProjectManager:
             day_photo_dir = os.path.join(self.project_dir, PHOTOS_SUBDIR, f"Day_{day}")
             os.makedirs(day_photo_dir, exist_ok=True)
 
-            unique_filename = f"{well_id}_Plate{plate_index + 1}_{uuid.uuid4().hex[:8]}.jpg"
+            unique_filename = f"{well_id}_Plate{plate_index}_{uuid.uuid4().hex[:8]}.jpg"
             destination_path = os.path.join(day_photo_dir, unique_filename)
 
             with Image.open(source_photo_path) as img:
                 rgb_img = img.convert("RGB")
                 rgb_img.save(destination_path, "jpeg", quality=95)
 
-            relative_path = os.path.join(PHOTOS_SUBDIR, f"Day_{day}", unique_filename)
+            relative_path = normalize_rel_path(
+                os.path.join(PHOTOS_SUBDIR, f"Day_{day}", unique_filename)
+            )
             added_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
             with self._conn:
@@ -598,13 +769,19 @@ class ProjectManager:
 
     def remove_photo_by_path(self, full_photo_path: str) -> bool:
         try:
-            rel = os.path.relpath(
-                os.path.normpath(full_photo_path),
-                os.path.normpath(self.project_dir),
-            ).replace("\\", "/")
+            rel = normalize_rel_path(
+                os.path.relpath(
+                    os.path.normpath(full_photo_path),
+                    os.path.normpath(self.project_dir),
+                )
+            )
             with self._conn:
+                # Normalizing the stored value inside the comparison matches rows
+                # in either separator form, so a row that predates the v10
+                # migration is still removable rather than stranded in the table.
                 cur = self._conn.execute(
-                    "DELETE FROM well_photos WHERE relative_path = ?", (rel,)
+                    r"DELETE FROM well_photos WHERE REPLACE(relative_path, '\', '/') = ?",
+                    (rel,),
                 )
             if cur.rowcount > 0:
                 log.info(f"Photo reference removed: {rel}")
@@ -652,6 +829,8 @@ class ProjectManager:
         data["concentration_map"] = self.get_concentration_map()
         data["plate_dimensions"] = self.get_plate_dimensions()
         data["photos_with_metadata"] = self.get_all_photos_with_metadata()
+        data["water_quality_log"] = self.get_water_quality_log()
+        data["analysis_settings"] = self.get_analysis_settings()
         return data
 
     # ------------------------------------------------------------------
@@ -683,7 +862,10 @@ class ProjectManager:
             finally:
                 registry.close()
         except Exception as e:
-            log.warning(f"Could not sync to registry: {e}")
+            # Non-fatal: a registry failure must not stop the project itself
+            # working. Logged with a traceback because the hub silently going
+            # stale is otherwise indistinguishable from nothing having changed.
+            log.error(f"Could not sync to registry: {e}", exc_info=True)
 
     def remove_from_registry(self) -> None:
         """Remove this project from registry.db (call before deleting files)."""
@@ -843,6 +1025,61 @@ class ProjectManager:
                     """,
                     (day, plate_index, well_id, cond),
                 )
+
+    def _backfill_legacy_finalized_days(self) -> None:
+        """Materialize completed days that were finalized before the day-end model.
+
+        Versions prior to 2.1.4 wrote an observation row only where the operator
+        *changed* a well, so a well left at its carried-forward live status has no
+        row at all. Finalizing declares a day fully observed, so those wells were
+        examined; the analysis accounts for this, but the stored data does not,
+        leaving the report's summary table and its raw-data appendix quoting
+        different counts for the same day, and the CSV export short of rows.
+
+        `materialize_day` writes exactly what a current-version finalize would
+        have written: it fills only wells lacking a row, marks them
+        ``auto_filled=1`` so they stay distinguishable and ``reopen_day`` can
+        still remove them, and never touches an operator-entered row. Days are
+        processed in ascending order because each carries its status forward from
+        the one before.
+
+        Runs on open and is idempotent: once a project is complete this costs two
+        COUNT queries and does nothing.
+        """
+        try:
+            assigned = self._conn.execute(
+                "SELECT COUNT(*) FROM plate_layout"
+            ).fetchone()[0]
+            if not assigned:
+                return
+
+            completed = [
+                r["day"] for r in self._conn.execute(
+                    "SELECT day FROM completed_days ORDER BY day"
+                ).fetchall()
+            ]
+            if not completed:
+                return
+
+            recorded = {
+                r["day"]: r["n"] for r in self._conn.execute(
+                    "SELECT day, COUNT(*) AS n FROM well_observations GROUP BY day"
+                ).fetchall()
+            }
+            incomplete = [d for d in completed if recorded.get(d, 0) < assigned]
+            if not incomplete:
+                return
+
+            for day in incomplete:  # ascending: each carries forward from the last
+                self.materialize_day(day)
+            log.info(
+                "Backfilled %d finalized day(s) recorded before day-end "
+                "materialization: %s", len(incomplete), incomplete,
+            )
+        except Exception as e:
+            # A project must still open even if the backfill cannot run; the
+            # analysis accounts for the missing rows regardless.
+            log.warning(f"Could not backfill legacy finalized days: {e}")
 
     def materialize_day(self, day: int) -> None:
         """

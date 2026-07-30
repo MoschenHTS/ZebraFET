@@ -1,10 +1,11 @@
 # ui_components.py
 from PySide6.QtWidgets import (QFrame, QVBoxLayout, QHBoxLayout, QLabel, QGridLayout,
-                             QWidget, QRubberBand, QLineEdit, QGroupBox)
+                             QWidget, QRubberBand, QLineEdit, QGroupBox, QToolButton,
+                             QSizePolicy)
 from PySide6.QtCore import (Qt, Signal, QRect, QPoint, QPointF, QSize,
-                          QPropertyAnimation, QEasingCurve, Property, QEvent, QTimer,
-                          QParallelAnimationGroup)
+                          QPropertyAnimation, QEasingCurve, Property, QEvent, QTimer)
 from PySide6.QtGui import (QColor, QPainter, QBrush, QPen, QPixmap, QTransform, QValidator, QDoubleValidator, QIcon, QTextDocument)
+from src.ui.typography import scaled_pt
 from typing import Optional, Dict
 
 from src.core.project_manager import ProjectManager
@@ -55,8 +56,8 @@ class FloatingLabelLineEdit(QWidget):
         
         self.label.setAttribute(Qt.WA_TransparentForMouseEvents)
         
-        self._font_size_up = 9
-        self._font_size_down = 11
+        self._font_size_up = round(scaled_pt(9))
+        self._font_size_down = round(scaled_pt(11))
         font = self.font()
         font.setPointSize(self._font_size_down)
         self.line_edit.setFont(font)
@@ -64,6 +65,12 @@ class FloatingLabelLineEdit(QWidget):
 
         self.line_edit.setParent(self)
         self.label.setParent(self)
+
+        # The composite is what layouts and tab order see, but the QLineEdit is
+        # what accepts typing; the proxy forwards focus so a click on the frame
+        # or a Tab onto the composite lands in the field.
+        self.setFocusProxy(self.line_edit)
+        self.line_edit.setAccessibleName(self._placeholder_text)
         
         self._setup_animations()
         
@@ -187,7 +194,11 @@ class WellWidget(QFrame):
     mouse_press = Signal(str, int)
     mouse_release = Signal(str, int)
     mouse_enter = Signal(str, int)
-    
+
+    #: Fill for a well carrying no concentration group, used before the theme
+    #: has had a chance to set unassignedFill.
+    DEFAULT_UNASSIGNED_FILL = "#343a45"
+
     def __init__(self, well_id: str, plate_index: int, day_index: int, parent=None):
         super().__init__(parent)
         self.setAutoFillBackground(False)
@@ -196,15 +207,25 @@ class WellWidget(QFrame):
 
         self.well_id = well_id; self.plate_index = plate_index; self.day_index = day_index
         self.current_status = "Live Embryo"
-        self.base_color = QColor("#343a45"); self.is_selected = False
+        self.base_color = QColor(self.DEFAULT_UNASSIGNED_FILL); self.is_selected = False
         self.is_hovered = False; self.is_assigned = False
+        self.conc_id: Optional[str] = None
+        self._observation_tooltip = "No notes or conditions recorded for this well."
+
+        # Painted rather than styled, so the theme reaches these through the
+        # qproperty- rules in the QSS. The defaults below are the dark theme's;
+        # they apply only if a theme fails to load.
+        self._unassigned_fill = QColor(73, 80, 87, 80)
+        self._hover_tint = QColor(255, 255, 255, 40)
+        self._selection_ring = QColor("#FFD700")
+        self._assigned_border = QColor("#555555")
+        self._unassigned_border = QColor("#6c757d")
         self.setMinimumSize(40, 40); self.setCursor(Qt.PointingHandCursor)
         self.setObjectName("WellWidget")
         
         self.info_label = QLabel(self)
         self.info_label.setAlignment(Qt.AlignCenter); self.info_label.setWordWrap(True)
         self.info_label.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.info_label.setStyleSheet("background: transparent; border: none;")
 
         self.alert_icon = QLabel(self)
         self.alert_icon.setPixmap(QIcon(resource_path("resources/icons/triangle-alert.svg")).pixmap(QSize(16, 16)))
@@ -261,27 +282,44 @@ class WellWidget(QFrame):
         """
         self.update_status(well_data.get("status", "Live Embryo"))
 
+        self._observation_tooltip = self._build_observation_tooltip(well_data)
+        self._apply_tooltip()
+
+    @staticmethod
+    def _build_observation_tooltip(well_data: Dict) -> str:
+        """The conditions and notes half of the tooltip."""
         notes = well_data.get("notes", "").strip()
         sublethal = well_data.get("sublethal_conditions", [])
-        
-        tooltip_parts = []
-        if sublethal:
-            tooltip_parts.append(f"Conditions: {', '.join(sublethal)}")
-        if notes:
-            tooltip_parts.append(f"Notes: {notes}")
-            
-        if tooltip_parts:
-            tooltip_text = "\n".join(tooltip_parts)
-        else:
-            tooltip_text = "No notes or conditions recorded for this well."
-        
-        self.setToolTip(tooltip_text)
 
-    def set_concentration(self, color: QColor):
-        """Sets the concentration color for the well."""
+        parts = []
+        if sublethal:
+            parts.append(f"Conditions: {', '.join(sublethal)}")
+        if notes:
+            parts.append(f"Notes: {notes}")
+        if parts:
+            return "\n".join(parts)
+        return "No notes or conditions recorded for this well."
+
+    def _apply_tooltip(self) -> None:
+        """Rebuild the tooltip from the group and the observation, in that order."""
+        lines = [f"Well {self.well_id}"]
+        lines.append(f"Group: {self.conc_id}" if self.conc_id else "Group: unassigned")
+        lines.append("")
+        lines.append(self._observation_tooltip)
+        self.setToolTip("\n".join(lines))
+
+    def set_concentration(self, color: QColor, conc_id: Optional[str] = None):
+        """Sets the concentration color and group of the well.
+
+        The group ID travels with the color because the fill is the only thing
+        distinguishing one group from another on the plate; a reader who cannot
+        separate two colors otherwise has nothing to go on.
+        """
         self.is_assigned = color is not None
         self.setProperty("assigned", "true" if self.is_assigned else "false")
-        self.base_color = color if color else QColor("#343a45")
+        self.base_color = color if color else QColor(self.DEFAULT_UNASSIGNED_FILL)
+        self.conc_id = conc_id
+        self._apply_tooltip()
         self._update_text_content(); self.update()
 
     def update_status(self, status: str):
@@ -320,6 +358,31 @@ class WellWidget(QFrame):
         self.alert_icon.setGeometry(self.rect().adjusted(0, 4, -4, 0))
         self._update_text_content(); super().resizeEvent(event)
 
+    # ── Theme hooks ────────────────────────────────────────────────────────
+    # The well is drawn, not styled, so a QSS rule cannot reach it directly.
+    # Declaring the palette as Qt properties lets each theme set them with
+    # qproperty- rules and keeps every color in the QSS files.
+
+    def _get_unassigned_fill(self) -> QColor: return self._unassigned_fill
+    def _set_unassigned_fill(self, color: QColor): self._unassigned_fill = color; self.update()
+    unassignedFill = Property(QColor, _get_unassigned_fill, _set_unassigned_fill)
+
+    def _get_hover_tint(self) -> QColor: return self._hover_tint
+    def _set_hover_tint(self, color: QColor): self._hover_tint = color; self.update()
+    hoverTint = Property(QColor, _get_hover_tint, _set_hover_tint)
+
+    def _get_selection_ring(self) -> QColor: return self._selection_ring
+    def _set_selection_ring(self, color: QColor): self._selection_ring = color; self.update()
+    selectionRing = Property(QColor, _get_selection_ring, _set_selection_ring)
+
+    def _get_assigned_border(self) -> QColor: return self._assigned_border
+    def _set_assigned_border(self, color: QColor): self._assigned_border = color; self.update()
+    assignedBorder = Property(QColor, _get_assigned_border, _set_assigned_border)
+
+    def _get_unassigned_border(self) -> QColor: return self._unassigned_border
+    def _set_unassigned_border(self, color: QColor): self._unassigned_border = color; self.update()
+    unassignedBorder = Property(QColor, _get_unassigned_border, _set_unassigned_border)
+
     def paintEvent(self, event):
         """Custom painting to draw the well as a circle with state indicators."""
         painter = QPainter(self)
@@ -327,14 +390,14 @@ class WellWidget(QFrame):
             painter.setRenderHint(QPainter.Antialiasing)
         rect = self.rect(); size = min(rect.width(), rect.height()) - 4
         draw_rect = QRect(0, 0, size, size); draw_rect.moveCenter(rect.center())
-        bg_color = self.base_color if self.is_assigned else QColor(73, 80, 87, 80)
+        bg_color = self.base_color if self.is_assigned else self._unassigned_fill
         painter.setPen(Qt.NoPen); painter.setBrush(QBrush(bg_color)); painter.drawEllipse(draw_rect)
         if self.is_hovered and not self.is_selected:
-            painter.setBrush(QBrush(QColor(255, 255, 255, 40))); painter.drawEllipse(draw_rect)
+            painter.setBrush(QBrush(self._hover_tint)); painter.drawEllipse(draw_rect)
         pen = QPen()
-        if self.is_selected: pen.setColor(QColor("#FFD700")); pen.setWidth(3)
+        if self.is_selected: pen.setColor(self._selection_ring); pen.setWidth(3)
         else:
-            pen.setColor(QColor("#555") if self.is_assigned else QColor("#6c757d")); pen.setWidth(1)
+            pen.setColor(self._assigned_border if self.is_assigned else self._unassigned_border); pen.setWidth(1)
             if not self.is_assigned: pen.setStyle(Qt.DashLine)
         painter.setBrush(Qt.NoBrush); painter.setPen(pen)
         border_rect = draw_rect.adjusted(pen.width()//2, pen.width()//2, -pen.width()//2, -pen.width()//2)
@@ -413,18 +476,27 @@ class PlateWidget(QWidget):
             conc_id = layout_data.get(well_id)
             conc_data = conc_map.get(conc_id)
             color = QColor(conc_data['color']) if conc_data else None
-            well_widget.set_concentration(color)
-            
+            well_widget.set_concentration(color, conc_id if conc_data else None)
+
             well_specific_data = plate_data.get(well_id, {})
             well_widget.update_well_details(well_specific_data)
             
             well_widget.set_selected(well_id == self._selected_well_id)
 
-    def update_well_status(self, well_id: str, status: str):
-        """Updates the visual status of a single well."""
+    def refresh_well(self, well_id: str):
+        """Re-read one well from the database and repaint it."""
         if well_id in self.well_widgets:
             well_data = self.manager.get_well_data(self.day_index, self.plate_index, well_id)
             self.well_widgets[well_id].update_well_details(well_data)
+
+    def update_well_status(self, well_id: str, status: str):
+        """Updates the visual status of a single well.
+
+        The status travels with the signal that triggers this, but the stored row
+        is the authority — it also carries the notes and conditions shown in the
+        tooltip — so the well is re-read rather than patched from the argument.
+        """
+        self.refresh_well(well_id)
 
     def set_well_concentration(self, well_id: str, conc_id: Optional[str]) -> None:
         """Updates the concentration color of a single well without reloading the whole plate."""
@@ -433,7 +505,7 @@ class PlateWidget(QWidget):
         conc_map = self.manager.get_concentration_map()
         conc_data = conc_map.get(conc_id) if conc_id else None
         color = QColor(conc_data['color']) if conc_data else None
-        self.well_widgets[well_id].set_concentration(color)
+        self.well_widgets[well_id].set_concentration(color, conc_id if conc_data else None)
 
     def mousePressEvent(self, event):
         """Handles mouse press to initiate rubber band selection."""
@@ -454,85 +526,113 @@ class PlateWidget(QWidget):
             if selected_wells: self.wells_selected_for_painting.emit(selected_wells, self.plate_index)
         super().mouseReleaseEvent(event)
 
-class CollapsibleBox(QGroupBox):
-    """
-    A custom QGroupBox that can be collapsed and expanded with an animation.
-    The checkbox in the title bar controls the visibility of its content.
-    """
-    def __init__(self, title="", parent=None):
-        super().__init__(title, parent)
-        self.setCheckable(True)
-        self.setChecked(True)
+#: Qt's maximum widget extent, used to release a height clamp.
+_UNCONSTRAINED_HEIGHT = 16777215
 
-        self.animation = QParallelAnimationGroup()
-        
+
+class CollapsibleSection(QWidget):
+    """A titled section that expands and collapses from a single arrow control.
+
+    The arrow is drawn by the active style rather than by a text glyph or a
+    theme-specific icon, so it follows the platform and the theme. Collapsing
+    hides the content rather than only zeroing its height, which keeps hidden
+    fields out of the keyboard focus chain.
+    """
+
+    toggled = Signal(bool)
+
+    def __init__(self, title: str = "", parent: Optional[QWidget] = None,
+                 expanded: bool = False, animate: bool = True):
+        super().__init__(parent)
+        self._animate = animate
+
+        self.toggle_button = QToolButton()
+        self.toggle_button.setText(title)
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setChecked(expanded)
+        self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.toggle_button.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
+        self.toggle_button.setObjectName("CollapsibleSectionHeader")
+        self.toggle_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.toggle_button.setCursor(Qt.PointingHandCursor)
+        self.toggle_button.setAccessibleName(title)
+        self.toggle_button.toggled.connect(self._on_toggled)
+
         self.content_widget = QWidget()
         self.content_layout = QVBoxLayout(self.content_widget)
+        self.content_layout.setContentsMargins(12, 6, 0, 6)
+        self.content_widget.setVisible(expanded)
 
-        main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(0)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.addWidget(self.content_widget)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(self.toggle_button)
+        outer.addWidget(self.content_widget)
 
-        self.toggle_animation = QPropertyAnimation(self, b"maximumHeight")
-        self.toggle_animation.setDuration(300)
-        self.toggle_animation.setEasingCurve(QEasingCurve.InOutCubic)
+        self._animation = QPropertyAnimation(self.content_widget, b"maximumHeight")
+        self._animation.setDuration(180)
+        self._animation.setEasingCurve(QEasingCurve.InOutCubic)
+        self._animation.finished.connect(self._on_animation_finished)
 
-        self.toggled.connect(self.on_toggled)
-        
-    def setContentLayout(self, layout):
-        """
-        Sets the layout or a single widget for the content area of the box.
-        
-        Args:
-            layout: A QLayout or QWidget to be added to the content area.
-        """
-        # Clear existing layout
+    def setTitle(self, title: str) -> None:
+        self.toggle_button.setText(title)
+        self.toggle_button.setAccessibleName(title)
+
+    def isExpanded(self) -> bool:
+        return self.toggle_button.isChecked()
+
+    def setExpanded(self, expanded: bool) -> None:
+        self.toggle_button.setChecked(expanded)
+
+    def setContentLayout(self, layout_or_widget) -> None:
+        """Adopt a widget or an existing layout as this section's content."""
         while self.content_layout.count():
             item = self.content_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.setParent(None)
+            if item.widget():
+                item.widget().setParent(None)
 
-        if isinstance(layout, QWidget):
-            self.content_layout.addWidget(layout)
+        if isinstance(layout_or_widget, QWidget):
+            self.content_layout.addWidget(layout_or_widget)
+        elif layout_or_widget is not None:
+            while layout_or_widget.count():
+                item = layout_or_widget.takeAt(0)
+                if item.widget():
+                    self.content_layout.addWidget(item.widget())
+                elif item.layout():
+                    self.content_layout.addLayout(item.layout())
+
+    def _on_toggled(self, checked: bool) -> None:
+        self.toggle_button.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+        self._animation.stop()
+
+        if not self._animate:
+            self.content_widget.setVisible(checked)
+            self.content_widget.setMaximumHeight(_UNCONSTRAINED_HEIGHT if checked else 0)
+        elif checked:
+            self.content_widget.setVisible(True)
+            self.content_widget.setMaximumHeight(0)
+            self._animation.setStartValue(0)
+            self._animation.setEndValue(self.content_widget.sizeHint().height())
+            self._animation.start()
         else:
-            # Move all items from the passed layout to the content layout
-            while layout.count():
-                item = layout.takeAt(0)
-                self.content_layout.addItem(item)
-                
-        # Set initial state without animation
-        self.on_toggled(self.isChecked(), immediate=True)
+            self._animation.setStartValue(self.content_widget.height())
+            self._animation.setEndValue(0)
+            self._animation.start()
 
-    def on_toggled(self, checked, immediate=False):
-        """
-        Handles the expand/collapse animation when the box is toggled.
+        self.toggled.emit(checked)
 
-        Args:
-            checked (bool): The new checked state.
-            immediate (bool): If True, sets the final state instantly without animation.
+    def _on_animation_finished(self) -> None:
+        """Settle the final state the animation cannot express itself.
+
+        Expanding must release the height clamp, or content that grows later
+        (wrapped text, a longer license) is silently cut off at whatever the
+        size hint happened to be. Collapsing must hide the content, which is
+        what removes it from the focus chain.
         """
-        self.content_widget.setVisible(checked)
-        
-        start_height = self.height()
-        
-        if checked:
-            end_height = self.sizeHint().height()
+        if self.isExpanded():
+            self.content_widget.setMaximumHeight(_UNCONSTRAINED_HEIGHT)
         else:
-            end_height = self.titleBarHeight()
-
-        if immediate:
-            self.setMaximumHeight(end_height)
-            return
-            
-        self.toggle_animation.setStartValue(start_height)
-        self.toggle_animation.setEndValue(end_height)
-        self.toggle_animation.start()
-
-    def titleBarHeight(self) -> int:
-        """Calculates the height of the QGroupBox title bar."""
-        return self.fontMetrics().height() + 15
+            self.content_widget.setVisible(False)
 
 
 # ---------------------------------------------------------------------------
@@ -581,7 +681,7 @@ class PlateThumbnail(QFrame):
         self._label = QLabel(fmt)
         self._label.setAlignment(Qt.AlignCenter)
         font = self._label.font()
-        font.setPointSize(8)
+        font.setPointSizeF(scaled_pt(8))
         self._label.setFont(font)
         layout.addWidget(self._canvas, 1)
         layout.addWidget(self._label)
@@ -692,8 +792,8 @@ class LoadingOverlay(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("LoadingOverlay")
-        self.setStyleSheet("#LoadingOverlay { background-color: rgba(0, 0, 0, 180); border-radius: 10px; }")
-
+        # The scrim and its text are styled per theme; a fixed dark scrim was
+        # unreadable over the light theme.
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
         layout.setSpacing(20)
@@ -704,9 +804,9 @@ class LoadingOverlay(QFrame):
         self.spinner = SpinningIcon(pixmap, self)
 
         self.label = QLabel()
-        self.label.setStyleSheet("color: white; background-color: transparent;")
+        self.label.setObjectName("LoadingOverlayLabel")
         font = self.font()
-        font.setPointSize(16)
+        font.setPointSizeF(scaled_pt(16))
         self.label.setFont(font)
 
         layout.addWidget(self.spinner)

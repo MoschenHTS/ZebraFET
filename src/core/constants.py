@@ -5,7 +5,11 @@ All modules should import from here. No project-level imports are made from
 this file so it can be safely imported anywhere without circular-import risk.
 """
 
-APP_VERSION = "2.1.4"
+APP_VERSION = "2.2.0"
+
+#: The species OECD TG 236 is written for, and the default for a new project.
+#: The schema carries the same default; keep the two in step.
+DEFAULT_SPECIES = "Danio rerio"
 
 # ---------------------------------------------------------------------------
 # Well observation statuses (OECD TG 236)
@@ -35,14 +39,23 @@ LETHAL_ENDPOINTS = [
 ]
 
 # ---------------------------------------------------------------------------
-# 9 sublethal morphological endpoints (OECD TG 236)
-# Stored as individual rows in well_sublethal_conditions
+# 9 sublethal morphological endpoints.
+#
+# TG 236 defines four apical observations (see LETHAL_ENDPOINTS above) and does
+# not enumerate a sublethal vocabulary; these nine are drawn from the FET
+# literature, principally von Hellfeld et al. 2020,
+# doi:10.1186/s12302-020-00398-3, which catalogues the morphological changes
+# scored in this assay.
+#
+# Stored as individual rows in well_sublethal_conditions. Because the stored
+# value is the literal string, renaming an entry needs a migration — see
+# _migrate_v12_to_v13.
 # ---------------------------------------------------------------------------
 NON_LETHAL_ENDPOINTS = [
     "Yolk sac oedema",
     "Pericardial oedema",
     "Spinal curvature (scoliosis)",
-    "Tail / fin malformation",
+    "Tail malformation",
     "Head / jaw malformation",
     "Fin malformation or absence",
     "Pigmentation abnormalities",
@@ -61,6 +74,18 @@ CONCENTRATION_TYPE_MAP = {
     "Positive Control": "Positive Control",
 }
 CONCENTRATION_TYPE_REVERSE = {v: k for k, v in CONCENTRATION_TYPE_MAP.items()}
+
+# ---------------------------------------------------------------------------
+# Plate and day indexing
+#
+# Plate indices are 1-based in the database, the UI and every display: the first
+# plate is 1, not 0, and plate_layout.plate_index / well_observations.plate_index
+# hold that value directly. Day indices follow the same convention. Display code
+# must therefore render the stored value as-is; adding 1 to reach a human-readable
+# plate number reports every plate as its successor.
+# ---------------------------------------------------------------------------
+FIRST_PLATE_INDEX = 1
+FIRST_DAY_INDEX = 1
 
 # ---------------------------------------------------------------------------
 # Supported plate formats: name → (rows, cols)

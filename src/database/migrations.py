@@ -104,6 +104,117 @@ def _migrate_v6_to_v7(conn: sqlite3.Connection) -> None:
             raise
 
 
+def _migrate_v7_to_v8(conn: sqlite3.Connection) -> None:
+    """Add the per-day water_quality_log table (OECD TG 236 in-test monitoring)."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS water_quality_log (
+            day              INTEGER PRIMARY KEY,
+            temperature      TEXT NOT NULL DEFAULT '',
+            dissolved_oxygen TEXT NOT NULL DEFAULT '',
+            ph               TEXT NOT NULL DEFAULT '',
+            conductivity     TEXT NOT NULL DEFAULT '',
+            notes            TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+
+
+def _migrate_v8_to_v9(conn: sqlite3.Connection) -> None:
+    """Add the analysis_settings table so curve-fitting choices persist.
+
+    Model, Abbott's correction and the reference-control selection materially
+    change the reported LC50 and NOEC, so re-deriving them from UI defaults on
+    every launch made a saved project's analysis irreproducible.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS analysis_settings (
+            id              INTEGER PRIMARY KEY CHECK (id = 1),
+            model_mode      TEXT NOT NULL DEFAULT 'LL4',
+            bottom          REAL NOT NULL DEFAULT 0.0,
+            top             REAL NOT NULL DEFAULT 100.0,
+            abbott          INTEGER NOT NULL DEFAULT 0,
+            control_mode    TEXT NOT NULL DEFAULT 'pooled'
+        )
+        """
+    )
+
+
+def _migrate_v9_to_v10(conn: sqlite3.Connection) -> None:
+    """Rewrite well_photos.relative_path to use forward slashes.
+
+    Photos added on Windows were stored with backslashes because the path came
+    from os.path.join, while every lookup normalized to forward slashes. The
+    two never matched, so removing such a photo silently did nothing and the
+    same project opened on macOS or Linux could not resolve its own images.
+    """
+    # REPLACE leaves rows without a backslash untouched, so no WHERE clause is
+    # needed and the migration is safe to re-run.
+    conn.execute(r"UPDATE well_photos SET relative_path = REPLACE(relative_path, '\', '/')")
+
+
+def _migrate_v10_to_v11(conn: sqlite3.Connection) -> None:
+    """Record which multiplicity correction the NOEC/LOEC was derived under.
+
+    Holm and Bonferroni can disagree about the LOEC, so which was used is part of
+    the result rather than a preference.
+    """
+    try:
+        conn.execute(
+            "ALTER TABLE analysis_settings ADD COLUMN "
+            "noec_correction TEXT NOT NULL DEFAULT 'holm'"
+        )
+    except sqlite3.OperationalError as e:
+        if "duplicate column" not in str(e).lower():
+            raise
+
+
+def _migrate_v11_to_v12(conn: sqlite3.Connection) -> None:
+    """Record the batch fertilization rate and the test species.
+
+    OECD TG 236 lists both among the contents a test report must carry, and the
+    fertilization rate is a validity criterion in its own right (§9a, ≥70%).
+    Neither had anywhere to live: the species was a fixed label in the settings
+    dialog that never reached the database.
+
+    The fertilization rate is TEXT rather than REAL so that "not recorded" stays
+    distinguishable from a recorded 0%; the report omits the criterion entirely
+    when the field is blank.
+    """
+    for stmt in (
+        "ALTER TABLE test_conditions ADD COLUMN "
+        "fertilization_rate TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE test_organisms ADD COLUMN "
+        "species TEXT NOT NULL DEFAULT 'Danio rerio'",
+    ):
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                raise
+
+
+def _migrate_v12_to_v13(conn: sqlite3.Connection) -> None:
+    """Rename the sublethal endpoint 'Tail / fin malformation' to 'Tail malformation'.
+
+    The vocabulary carried two overlapping entries — 'Tail / fin malformation'
+    and 'Fin malformation or absence' — so the same observation could be filed
+    under either, which is the scoring inconsistency the structured endpoint list
+    exists to prevent. The tail entry is narrowed and the fin entry left as the
+    single home for fin findings.
+
+    The mapping is not perfectly recoverable: a row recorded under the old label
+    may have meant a tail finding, a fin finding, or both. It maps to
+    'Tail malformation' because that is what the old label led with, and so is
+    the likeliest reading of what the scorer selected.
+    """
+    conn.execute(
+        "UPDATE well_sublethal_conditions SET condition = ? WHERE condition = ?",
+        ("Tail malformation", "Tail / fin malformation"),
+    )
+
+
 # Map target_version → migration function
 # Add new entries here as the schema evolves.
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
@@ -114,6 +225,12 @@ MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     5: _migrate_v4_to_v5,
     6: _migrate_v5_to_v6,
     7: _migrate_v6_to_v7,
+    8: _migrate_v7_to_v8,
+    9: _migrate_v8_to_v9,
+    10: _migrate_v9_to_v10,
+    11: _migrate_v10_to_v11,
+    12: _migrate_v11_to_v12,
+    13: _migrate_v12_to_v13,
 }
 
 
