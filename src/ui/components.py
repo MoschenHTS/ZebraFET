@@ -165,7 +165,9 @@ class FloatingLabelLineEdit(QWidget):
     def setText(self, text: str):
         """Sets the text of the internal QLineEdit and updates the label."""
         self.line_edit.setText(text)
-        QTimer.singleShot(0, self._check_label_position)
+        # Bound to self so the callback is dropped if the widget is destroyed
+        # before the timer fires, rather than reaching a deleted QLineEdit.
+        QTimer.singleShot(0, self, self._check_label_position)
 
     def _check_label_position(self):
         """

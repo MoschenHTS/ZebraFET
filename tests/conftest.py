@@ -23,6 +23,35 @@ if PROJECT_ROOT not in sys.path:
 
 
 @pytest.fixture(autouse=True)
+def _destroy_leftover_widgets():
+    """Destroy the widgets a test leaves behind.
+
+    close() only hides a widget; the C++ object lives until something deletes
+    it. The suite calls close() eighty-odd times and deleteLater() four, so
+    every window a test opened stayed alive, along with its timers and running
+    property animations. Those accumulated objects are processed by whichever
+    later test next drains the event loop, which on Linux was enough to
+    segfault a processEvents() call in an unrelated module.
+
+    Qt is reached through sys.modules rather than imported, so the tests that
+    never touch the GUI do not pull PySide6 in just to run this teardown.
+    """
+    yield
+
+    widgets = sys.modules.get("PySide6.QtWidgets")
+    if widgets is None:
+        return
+    app = widgets.QApplication.instance()
+    if app is None:
+        return
+
+    for widget in app.topLevelWidgets():
+        widget.close()
+        widget.deleteLater()
+    app.processEvents()  # run the deferred deletions before the next test
+
+
+@pytest.fixture(autouse=True)
 def _isolated_app_data(tmp_path, monkeypatch):
     """Redirect every project-registry and projects-base write into tmp_path.
 

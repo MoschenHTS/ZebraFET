@@ -788,7 +788,7 @@ class MainWindow(QMainWindow):
         if self.toggle_button.isChecked():
             self.save_feedback_label.show()
 
-        QTimer.singleShot(3000, lambda: self.save_feedback_label.hide())
+        QTimer.singleShot(3000, self, lambda: self.save_feedback_label.hide())
 
     # Methods to handle threaded project loading
     def start_project_load(self, path: str):

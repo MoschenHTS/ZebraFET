@@ -36,7 +36,7 @@ class ExperimentViewWidget(QWidget):
         self.well_editor.data_changed.connect(self._handle_well_update)
         self.day_tabs.currentChanged.connect(self._on_day_tab_changed)
         self._refresh_tabs()
-        QTimer.singleShot(100, self._select_first_well)
+        QTimer.singleShot(100, self, self._select_first_well)
 
     def _init_ui(self):
         """Initializes the main layout for the experiment view page."""
