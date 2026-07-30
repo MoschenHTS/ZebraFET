@@ -10,6 +10,7 @@ bumped while pyproject.toml, CITATION.cff and the README still read 2.1.4.
 
 These tests pin all five to APP_VERSION so the next bump cannot go out partial.
 """
+import ast
 import re
 from pathlib import Path
 
@@ -47,6 +48,33 @@ def test_declared_version_matches_app_version(filename, pattern, description):
     assert match.group(1) == APP_VERSION, (
         f"{filename} declares {match.group(1)}, but APP_VERSION is {APP_VERSION}"
     )
+
+
+def test_windows_version_resource_resolves_its_placeholders():
+    """The spec stamps the exe with a version resource, on Windows only.
+
+    Because that branch never runs on macOS or Linux, a wrong name inside its
+    f-string is invisible until a Windows build. One was: it read _APP_VERSION
+    where the spec defines APP_VERSION, which failed the Windows job while the
+    other two platforms built cleanly.
+    """
+    spec = _read("ZebraFET.spec")
+    bound = {
+        node.id
+        for tree in [ast.parse(spec)]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+    } | {
+        alias.asname or alias.name.split(".")[0]
+        for tree in [ast.parse(spec)]
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+        for alias in node.names
+    }
+    for name in re.findall(r"\{(_?[A-Za-z_][A-Za-z0-9_]*)\}", spec):
+        assert name in bound, (
+            f"ZebraFET.spec interpolates {{{name}}}, which is never bound in the spec"
+        )
 
 
 def test_readme_citation_states_the_current_version():

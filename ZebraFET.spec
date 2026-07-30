@@ -69,12 +69,12 @@ if sys.platform == 'win32':
       StringTable('040904B0', [
         StringStruct('CompanyName', 'Henrique Tamanini S. Moschen'),
         StringStruct('FileDescription', 'ZebraFET'),
-        StringStruct('FileVersion', '{_APP_VERSION}'),
+        StringStruct('FileVersion', '{APP_VERSION}'),
         StringStruct('InternalName', 'ZebraFET'),
         StringStruct('LegalCopyright', 'Copyright (C) Henrique Tamanini S. Moschen. GPL-3.0.'),
         StringStruct('OriginalFilename', 'ZebraFET.exe'),
         StringStruct('ProductName', 'ZebraFET'),
-        StringStruct('ProductVersion', '{_APP_VERSION}')
+        StringStruct('ProductVersion', '{APP_VERSION}')
       ])
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
