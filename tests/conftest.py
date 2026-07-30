@@ -7,6 +7,10 @@ biostatistics, and the database package can be imported without Qt.
 import os
 import sys
 
+# Qt must not try to reach a display. Set before anything imports PySide6, and
+# only as a default so a developer can override it to watch a test render.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 import matplotlib
 matplotlib.use("Agg")
 
