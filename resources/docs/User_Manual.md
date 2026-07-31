@@ -1,9 +1,7 @@
 <!--
 ZebraFET User Guide — source document.
 The About dialog serves this file and the PDF beside it from the same tab, so
-regenerate the PDF after every edit:
-
-    python tools/build_manual.py
+regenerate the PDF after every edit.
 -->
 
 # ZebraFET User Guide
